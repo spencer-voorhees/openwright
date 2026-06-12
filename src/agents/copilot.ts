@@ -88,6 +88,7 @@ export const copilotAdapter: AgentAdapter = {
     opts.abortSignal.addEventListener("abort", onParentAbort, { once: true });
 
     let lastText = "";
+    let authError = false;
     const textParts: string[] = [];
 
     const consume = async (stream: ReadableStream, isErr: boolean) => {
@@ -106,6 +107,7 @@ export const copilotAdapter: AgentAdapter = {
           if (!ev) continue;
           if (isErr && ev.kind === "text") ev.kind = "system";
           if (ev.kind === "text") textParts.push(ev.text);
+          if (/no authentication|not authenticated/i.test(ev.text)) authError = true;
           opts.onEvent(ev);
         }
       }
@@ -119,6 +121,10 @@ export const copilotAdapter: AgentAdapter = {
       await Promise.all([consume(proc.stdout, false), consume(proc.stderr, true)]);
       const code = await proc.exited;
       lastText = textParts.slice(-40).join("\n");
+      // The CLI exits 0 on auth failure — catch it by message.
+      if (authError && !opts.abortSignal.aborted) {
+        throw new Error("copilot is not authenticated — run `copilot` once and /login, or set COPILOT_GITHUB_TOKEN (fine-grained PAT with Copilot permission).");
+      }
       if (code !== 0 && !opts.abortSignal.aborted) {
         // Surface auth failures clearly — they're the most common
         // first-run issue on a fresh machine.
