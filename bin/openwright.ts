@@ -3,6 +3,7 @@
 // Registered globally by setup via `bun link`; works the same on
 // macOS, Linux, and Windows.
 import { existsSync, readFileSync, writeFileSync, unlinkSync, openSync } from "node:fs";
+import { spawn } from "node:child_process";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { platform } from "node:os";
@@ -68,40 +69,21 @@ async function start(foreground = false, noOpen = false) {
     const proc = Bun.spawn({ cmd: [process.execPath, "run", join(ROOT, "src", "server.ts")], cwd: ROOT, stdout: "inherit", stderr: "inherit" });
     process.exit(await proc.exited);
   }
-  // The server writes the logfile through its own fd / shell
-  // redirection, so this CLI can exit right after the health check.
-  let spawnedPid: number | null = null;
-  if (platform() === "win32") {
-    // cmd `start` detaches the server from this process tree —
-    // otherwise it dies when the CLI (or setup) exits. The command
-    // goes through a launcher .cmd file because nested quoting
-    // through spawn + cmd + start is unreliable.
-    const launcher = join(ROOT, ".openwright-launch.cmd");
-    writeFileSync(launcher, [
-      "@echo off",
-      `cd /d "${ROOT}"`,
-      `"${process.execPath}" run "${join(ROOT, "src", "server.ts")}" >> "${LOGFILE}" 2>&1`,
-      "",
-    ].join("\r\n"));
-    Bun.spawnSync({ cmd: ["cmd", "/c", "start", "openwright", "/min", launcher], cwd: ROOT });
-  } else {
-    const fd = openSync(LOGFILE, "a");
-    const proc = Bun.spawn({
-      cmd: [process.execPath, "run", join(ROOT, "src", "server.ts")],
-      cwd: ROOT,
-      stdout: fd, stderr: fd,
-    });
-    proc.unref();
-    spawnedPid = proc.pid;
-    writeFileSync(PIDFILE, String(proc.pid));
-  }
+  // detached:true gives the server its own process group/console on
+  // every platform (DETACHED_PROCESS on Windows), so it survives the
+  // CLI, setup, and the terminal. stdio goes straight to the logfile.
+  const fd = openSync(LOGFILE, "a");
+  const child = spawn(process.execPath, ["run", join(ROOT, "src", "server.ts")], {
+    cwd: ROOT,
+    detached: true,
+    stdio: ["ignore", fd, fd],
+  });
+  child.unref();
+  const spawnedPid: number | null = child.pid || null;
+  if (spawnedPid) writeFileSync(PIDFILE, String(spawnedPid));
   for (let i = 0; i < 40; i++) {
     if (await healthy()) {
-      if (!spawnedPid) {
-        spawnedPid = pidByPort();
-        if (spawnedPid) writeFileSync(PIDFILE, String(spawnedPid));
-      }
-      console.log(`openwright running at ${URL_}${spawnedPid ? `  (pid ${spawnedPid}` : "  ("} logs: openwright logs)`);
+      console.log(`openwright running at ${URL_}  (pid ${spawnedPid ?? "?"}, logs: openwright logs)`);
       if (!noOpen) openBrowser();
       process.exit(0);
     }
