@@ -51,20 +51,6 @@ export function postUserReply(gen_id: number, content: string) {
   return Promise.resolve();
 }
 
-// Mid-run steering is engine-specific (the Claude SDK supports it,
-// subprocess CLIs don't) — openwright keeps the endpoint but records the
-// note for the NEXT loop iteration instead of injecting mid-turn.
-const steerNotes = new Map<number, string[]>();
-export function postSteer(gen_id: number, content: string) {
-  const list = steerNotes.get(gen_id) || [];
-  if (!list.includes(content)) list.push(content);
-  steerNotes.set(gen_id, list);
-  appendMessage(gen_id, "user", content);
-  appendMessage(gen_id, "agent",
-    "[noted] Steering lands at the agent's next checkpoint; engines without live injection can't take mid-turn input.");
-  return Promise.resolve();
-}
-
 const activeAborts = new Map<number, AbortController>();
 const stopRequests = new Set<number>();
 export function stopGeneration(gen_id: number): boolean {
@@ -269,18 +255,6 @@ async function runAgentLoop(gen_id: number, workspace_id: number, sys: string, t
     if (stopRequests.has(gen_id)) { stopRequests.delete(gen_id); throw new Error("stopped by user"); }
     attempts++;
 
-    const notes = steerNotes.get(gen_id);
-    if (notes?.length) {
-      // A user often answers the agent's question by repeating their
-      // queued steer — don't feed the agent the same text twice.
-      const fresh = notes.filter((n) => !nextPrompt!.includes(n));
-      if (fresh.length) {
-        nextPrompt += "\n\nUser steering notes (added mid-run — treat as requirements):\n" +
-          fresh.map((n) => `- ${n}`).join("\n");
-      }
-      steerNotes.delete(gen_id);
-    }
-
     const wsNow = db.query("SELECT agent_engine, agent_model FROM workspaces WHERE id = ?").get(workspace_id) as any;
     const nowAdapter = getAdapter(wsNow?.agent_engine);
     if (nowAdapter.id !== adapter.id) {
@@ -459,18 +433,9 @@ If anything material is ambiguous (audience, scope, intended length, missing dat
     }
     db.run("UPDATE generations SET artifact_path = ?, artifact_version = ? WHERE id = ?",
       [built.path, built.version, gen_id]);
-    const unconsumed = steerNotes.get(gen_id);
-    if (unconsumed?.length) {
-      steerNotes.delete(gen_id);
-      const n = unconsumed.length;
-      appendMessage(gen_id, "agent",
-        `[noted] The run finished before ${n === 1 ? "your steering note" : `${n} steering notes`} (above) reached the agent. Include what still applies in your next prompt.`);
-    }
     setStatus(gen_id, "done", { completed_at: Date.now() });
   } catch (e: any) {
     setStatus(gen_id, "errored", { error: String(e?.message || e).slice(0, 500), completed_at: Date.now() });
     appendMessage(gen_id, "agent", `Run failed: ${String(e?.message || e).slice(0, 300)}`);
-  } finally {
-    steerNotes.delete(gen_id);
   }
 }

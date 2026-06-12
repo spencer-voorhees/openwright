@@ -11,13 +11,12 @@
 //   POST   /api/workspaces/:slug/generate         {prompt?}
 //   GET    /api/generations/:id
 //   POST   /api/generations/:id/reply             {content}   (answers an ASK)
-//   POST   /api/generations/:id/steer             {content}   (mid-flight user message)
 //   GET    /api/artifacts/:gen_id                 (latest artifact)
 //   GET    /api/files/:id                         (download a workspace file)
 import { mkdirSync, writeFileSync, statSync, unlinkSync, existsSync, readFileSync } from "node:fs";
 import { join, extname } from "node:path";
 import { db, getSetting, setSetting } from "./db";
-import { startGeneration, postUserReply, postSteer, reapStrandedGenerations, stopGeneration, WORKSPACE_ROOT } from "./agent";
+import { startGeneration, postUserReply, reapStrandedGenerations, stopGeneration, WORKSPACE_ROOT } from "./agent";
 import { ADAPTERS, DEFAULT_ENGINE } from "./agents/index";
 
 const PORT = Number(process.env.OPENWRIGHT_PORT || process.env.PORT || 8090);
@@ -563,20 +562,6 @@ async function replyToAgent(gen_id: string, req: Request) {
   return json({ ok: true });
 }
 
-async function steerAgent(gen_id: string, req: Request) {
-  const { content } = await req.json() as { content: string };
-  if (!content || !content.trim()) return err("content required");
-  const g = db.query("SELECT * FROM generations WHERE id = ?").get(gen_id) as any;
-  if (!g) return err("generation not found", 404);
-  if (g.status !== "running" && g.status !== "queued") {
-    return err(`cannot steer a generation in status '${g.status}'`);
-  }
-  // postSteer owns the transcript write — inserting here too showed
-  // the user's steer twice.
-  postSteer(g.id, content.trim()).catch((e) => console.error("[steer]", gen_id, e));
-  return json({ ok: true });
-}
-
 // ─── Comments ────────────────────────────────────────────────
 // Per-artifact slide-level comments. Open comments are surfaced into
 // the agent's trigger message on the next generation; the agent makes
@@ -938,7 +923,6 @@ function route(req: Request, url: URL): Promise<Response> | Response {
   if ((mt = m("/api/workspaces/([^/]+)/artifacts/(\\d+)")) && req.method === "DELETE") return deleteArtifact(mt[1], mt[2]);
   if ((mt = m("/api/generations/(\\d+)")) && req.method === "GET") return getGeneration(mt[1]);
   if ((mt = m("/api/generations/(\\d+)/reply")) && req.method === "POST") return replyToAgent(mt[1], req);
-  if ((mt = m("/api/generations/(\\d+)/steer")) && req.method === "POST") return steerAgent(mt[1], req);
   if ((mt = m("/api/artifacts/(\\d+)/comments")) && req.method === "GET")  return listComments(mt[1]);
   if ((mt = m("/api/artifacts/(\\d+)/comments")) && req.method === "POST") return addComment(mt[1], req);
   if ((mt = m("/api/comments/(\\d+)")) && req.method === "PATCH")  return updateComment(mt[1], req);

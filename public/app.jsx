@@ -872,7 +872,11 @@ function WorkspaceView({ slug, wsTab, setWsTab, onBack, onChange }) {
   useEffect(() => { refresh(); }, [slug]);
 
   // Active run drives the polling cadence.
-  const activeGenRow = data?.generations?.find((g) => g.id === activeGen);
+  // Fall back to the workspace's live run: without this, opening the
+  // shelf mid-run (nothing explicitly selected) showed an idle
+  // composer that could start a second concurrent generation.
+  const activeGenRow = data?.generations?.find((g) => g.id === activeGen)
+    || data?.generations?.find((g) => ["queued", "running", "awaiting_user"].includes(g.status));
   useEffect(() => {
     if (!activeGenRow) return;
     const s = activeGenRow.status;
@@ -971,11 +975,7 @@ function WorkspaceView({ slug, wsTab, setWsTab, onBack, onChange }) {
           await postJson(`/api/generations/${activeGen}/reply`, { content: text });
           refresh();
         }}
-        onSteer={async (text) => {
-          if (!activeGen) return;
-          await postJson(`/api/generations/${activeGen}/steer`, { content: text });
-          refresh();
-        }} />
+        />
     </>
   );
 }
@@ -2045,7 +2045,7 @@ function NoteModal({ slug, onClose, onSaved }) {
 // AGENT PANEL
 // ═══════════════════════════════════════════════════════════════
 
-function AgentDrawer({ ws, generation, open, onOpen, onClose, busy, files, notes, onGenerate, onReply, onSteer, hasPrior }) {
+function AgentDrawer({ ws, generation, open, onOpen, onClose, busy, files, notes, onGenerate, onReply, hasPrior }) {
   const status = generation?.status || "idle";
   const hasActive = generation && (status === "running" || status === "queued" || status === "awaiting_user");
   return (
@@ -2054,7 +2054,7 @@ function AgentDrawer({ ws, generation, open, onOpen, onClose, busy, files, notes
         <AgentPanelBody
           ws={ws} generation={generation} busy={busy}
           files={files} notes={notes}
-          onGenerate={onGenerate} onReply={onReply} onSteer={onSteer}
+          onGenerate={onGenerate} onReply={onReply}
           hasPrior={hasPrior}
           onClose={onClose} />
       </div>
@@ -2062,7 +2062,7 @@ function AgentDrawer({ ws, generation, open, onOpen, onClose, busy, files, notes
   );
 }
 
-function AgentPanelBody({ ws, generation, busy, files, notes, onGenerate, onReply, onSteer, hasPrior, onClose }) {
+function AgentPanelBody({ ws, generation, busy, files, notes, onGenerate, onReply, hasPrior, onClose }) {
   const [messages, setMessages] = useState([]);
   const [composing, setComposing] = useState("");
 
@@ -2102,34 +2102,35 @@ function AgentPanelBody({ ws, generation, busy, files, notes, onGenerate, onRepl
   const status = generation?.status || "idle";
   const awaitingReply = status === "awaiting_user";
   const isRunning = status === "running" || status === "queued";
-  // Composer mode determines the submit handler and button label.
-  // - awaiting_user → "Send" (answers an ASK)
-  // - running       → "Steer" (mid-flight user note)
-  // - else          → "Generate" (kick off a new run)
-  const mode = awaitingReply ? "reply" : isRunning ? "steer" : "generate";
+  // Composer modes: answering the agent's question, or starting a run.
+  // While a run is mid-flight the composer disables — engines run as
+  // one-shot turns, so there is no live channel to type into. (Session
+  // resume will make mid-run input meaningful; steering was removed
+  // because it only ever was a note for the next checkpoint.)
+  const mode = awaitingReply ? "reply" : "generate";
 
   const send = useCallback(async (text, opts = {}) => {
     const t = text.trim();
     // For Generate, an empty prompt is allowed (the agent uses what's in
-    // the workspace). For reply/steer we require text.
-    if (mode !== "generate" && !t) return;
-    if (mode === "reply")      await onReply(t);
-    else if (mode === "steer") await onSteer(t);
-    else                       await onGenerate(t, opts);
+    // the workspace). Replies require text.
+    if (mode === "reply" && !t) return;
+    if (mode === "reply") await onReply(t);
+    else                  await onGenerate(t, opts);
     setComposing("");
-  }, [mode, onGenerate, onReply, onSteer]);
+  }, [mode, onGenerate, onReply]);
 
   const hasActive = generation && (isRunning || awaitingReply);
 
   const placeholder =
     mode === "reply" ? "answer the agent…" :
-    mode === "steer" ? "Steer the agent (applies next turn)…" :
+    isRunning ? "Agent is working. Your next message can go after it finishes…" :
     "Add a prompt (optional) or just hit Generate…";
 
   // Generate is the only mode where the empty composer can fire.
   const sendDisabled =
+    isRunning ||
     (mode === "generate" && busy) ||
-    (mode !== "generate" && !composing.trim());
+    (mode === "reply" && !composing.trim());
 
   return (
     <>
@@ -2196,7 +2197,7 @@ function AgentPanelBody({ ws, generation, busy, files, notes, onGenerate, onRepl
 
       <div className="composer">
         <div className="composer-box">
-          <textarea rows={1} placeholder={placeholder}
+          <textarea rows={1} placeholder={placeholder} disabled={isRunning}
             value={composing} onChange={(e) => setComposing(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
@@ -2214,16 +2215,15 @@ function AgentPanelBody({ ws, generation, busy, files, notes, onGenerate, onRepl
             <div className="composer-actions">
               {mode === "generate" && hasPrior && !busy && (
                 <button className="btn btn-ghost gen-btn"
-                  title="Discard prior-run context — agent will not see what was built before"
+                  title="Start clean: the next run won't carry context from prior runs (files and versions on disk are untouched)"
                   onClick={() => send(composing, { fresh: true })}>
-                  <Icon name="refresh-cw" /> New session
+                  <Icon name="refresh-cw" /> Fresh start
                 </button>
               )}
               <button className="btn btn-primary gen-btn"
                 disabled={sendDisabled}
                 onClick={() => send(composing)}>
                 {mode === "reply" && <><Icon name="send" /> Send</>}
-                {mode === "steer" && <><Icon name="steering-wheel" /> Steer</>}
                 {mode === "generate" && (busy
                   ? <><Spinner /> Working…</>
                   : <><Icon name="sparkles" /> {hasPrior ? "Continue" : "Generate"}</>)}
