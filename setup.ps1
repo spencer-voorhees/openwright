@@ -63,11 +63,11 @@ if (-not (Have "bun")) { Write-Host "bun is required but missing - rerun setup";
 cmd /c "bun link >/dev/null 2>&1"
 
 # Make the CLI durable regardless of how bun landed:
-# 1. an explicit shim in ~\.bunin (bun link's shim can be flaky)
+# 1. an explicit shim in ~\.bun\bin (bun link's shim can be flaky)
 $bunBin = Join-Path $env:USERPROFILE ".bun\bin"
 $shim = Join-Path $bunBin "openwright.cmd"
 "@echo off`r`n`"$bunBin\bun.exe`" `"$PSScriptRoot\bin\openwright.ts`" %*" | Set-Content -Path $shim -Encoding Ascii
-# 2. ~\.bunin on the persistent User PATH (the bun installer's
+# 2. ~\.bun\bin on the persistent User PATH (the bun installer's
 #    registry write does not always reach already-open sessions)
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
 if ($userPath -notlike "*$bunBin*") {
@@ -158,8 +158,15 @@ if (-not (Select-String -Path ".env" -Pattern "^OPENWRIGHT_AGENT=" -Quiet -Error
 }
 
 # Auth walkthroughs.
-if ($haveCopilot -and -not ($env:COPILOT_GITHUB_TOKEN -or $env:GH_TOKEN -or $env:GITHUB_TOKEN)) {
-  if ((-not $Yes) -and (Ask "Log in to Copilot now (device-code flow)?" $false)) { & $(if ($copilotBin) { $copilotBin } else { "copilot" }) login }
+$copilotMarker = Join-Path $env:USERPROFILE ".copilot\.openwright-logged-in"
+if ($haveCopilot -and -not (Test-Path $copilotMarker) -and -not ($env:COPILOT_GITHUB_TOKEN -or $env:GH_TOKEN -or $env:GITHUB_TOKEN)) {
+  if ((-not $Yes) -and (Ask "Log in to Copilot now (device-code flow)?" $false)) {
+    & $(if ($copilotBin) { $copilotBin } else { "copilot" }) login
+    if ($LASTEXITCODE -eq 0) {
+      New-Item -ItemType Directory -Force (Split-Path $copilotMarker) | Out-Null
+      New-Item -ItemType File -Force $copilotMarker | Out-Null
+    }
+  }
   else { Note "copilot auth later: run 'copilot login' (or set COPILOT_GITHUB_TOKEN)" }
 }
 if ($haveCodex) {
@@ -176,8 +183,11 @@ if ($haveClaude)  { Ok "claude ready" }
 if ($haveCopilot) { Ok "copilot installed (auth: 'copilot login')" }
 if ($haveCodex)   { Ok "codex installed (auth: 'codex login status')" }
 Write-Host ""
-Write-Host "  Start it:   openwright start" -ForegroundColor White
-Note "(if the command is not found, open a NEW terminal first - the"
-Note "PATH update lands in fresh sessions)"
-Note "Also: openwright stop / status / logs / open / update"
+$bunExe = Join-Path $env:USERPROFILE ".bun\bin\bun.exe"
+if (Ask "Start openwright now?" $true) {
+  & $bunExe (Join-Path $PSScriptRoot "bin\openwright.ts") start
+} else {
+  Write-Host "  Start it:   openwright start" -ForegroundColor White
+}
+Note "CLI: openwright start / stop / status / logs / open / update / uninstall"
 Write-Host ""

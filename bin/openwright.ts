@@ -21,6 +21,10 @@ function port(): number {
   return 8090;
 }
 const URL_ = `http://localhost:${port()}`;
+// Health checks hit 127.0.0.1 directly: the server binds IPv4
+// loopback, and "localhost" resolves to ::1 first on some systems
+// (notably Windows), which made a running server look stopped.
+const HEALTH_URL = `http://127.0.0.1:${port()}`;
 
 function pid(): number | null {
   try {
@@ -33,12 +37,12 @@ function pid(): number | null {
 
 async function healthy(): Promise<boolean> {
   try {
-    const r = await fetch(`${URL_}/api/workspaces`, { signal: AbortSignal.timeout(1500) });
+    const r = await fetch(`${HEALTH_URL}/api/workspaces`, { signal: AbortSignal.timeout(1500) });
     return r.ok;
   } catch { return false; }
 }
 
-async function start(foreground = false) {
+async function start(foreground = false, noOpen = false) {
   if (await healthy()) { console.log(`already running at ${URL_}`); return; }
   if (foreground) {
     const proc = Bun.spawn({ cmd: [process.execPath, "run", join(ROOT, "src", "server.ts")], cwd: ROOT, stdout: "inherit", stderr: "inherit" });
@@ -57,6 +61,7 @@ async function start(foreground = false) {
   for (let i = 0; i < 40; i++) {
     if (await healthy()) {
       console.log(`openwright running at ${URL_}  (pid ${proc.pid}, logs: openwright logs)`);
+      if (!noOpen) openBrowser();
       process.exit(0);
     }
     await new Promise((r) => setTimeout(r, 250));
@@ -143,9 +148,9 @@ function setup() {
 
 const [cmd, ...args] = process.argv.slice(2);
 switch (cmd) {
-  case "start":   await start(args.includes("--foreground") || args.includes("-f")); break;
+  case "start":   await start(args.includes("--foreground") || args.includes("-f"), args.includes("--no-open")); break;
   case "stop":    stop(); break;
-  case "restart": stop(); await new Promise((r) => setTimeout(r, 500)); await start(); break;
+  case "restart": stop(); await new Promise((r) => setTimeout(r, 500)); await start(false, true); break;
   case "status":  await status(); break;
   case "logs":    logs(Number(args[0]) || 60); break;
   case "open":    openBrowser(); break;
@@ -157,7 +162,7 @@ switch (cmd) {
 
 usage: openwright <command>
 
-  start [-f]   start the server (background; -f for foreground)
+  start [-f]   start the server + open the browser (--no-open to skip)
   stop         stop the server
   restart      stop + start
   status       is it running?

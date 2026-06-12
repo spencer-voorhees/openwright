@@ -166,9 +166,14 @@ if ! grep -q '^OPENWRIGHT_AGENT=' .env 2>/dev/null; then
 fi
 
 # Auth walkthroughs for engines that are installed but not logged in.
-if [ "$HAVE_COPILOT" = "1" ] && [ -z "${COPILOT_GITHUB_TOKEN:-}${GH_TOKEN:-}${GITHUB_TOKEN:-}" ]; then
+COPILOT_MARKER="$HOME/.copilot/.openwright-logged-in"
+if [ "$HAVE_COPILOT" = "1" ] && [ ! -f "$COPILOT_MARKER" ] && [ -z "${COPILOT_GITHUB_TOKEN:-}${GH_TOKEN:-}${GITHUB_TOKEN:-}" ]; then
   if [ "$YES" = "0" ] && ask "Log in to Copilot now (opens a device-code flow)?" n; then
-    "${COPILOT_BIN:-copilot}" login || note "login did not complete — run 'copilot login' later"
+    if "${COPILOT_BIN:-copilot}" login; then
+      mkdir -p "$HOME/.copilot"; touch "$COPILOT_MARKER"
+    else
+      note "login did not complete — run 'copilot login' later"
+    fi
   else
     note "copilot auth later: run 'copilot login' (or set COPILOT_GITHUB_TOKEN)"
   fi
@@ -189,7 +194,6 @@ step "Done"
 printf '\n'
 if ask "Start openwright now?" y; then
   "$HOME/.bun/bin/bun" "$(pwd)/bin/openwright.ts" start
-  "$HOME/.bun/bin/bun" "$(pwd)/bin/openwright.ts" open >/dev/null 2>&1 || true
 else
   bold "  Start it:   openwright start"
 fi

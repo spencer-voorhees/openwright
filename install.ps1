@@ -27,3 +27,8 @@ if (Test-Path (Join-Path $dir ".git")) {
 
 Set-Location $dir
 powershell -ExecutionPolicy Bypass -File (Join-Path $dir "setup.ps1")
+
+# This script runs in the caller's session (irm | iex), so it CAN fix
+# the current shell's PATH - the openwright command works immediately.
+$bunBin = Join-Path $env:USERPROFILE ".bun\bin"
+if ($env:Path -notlike "*$bunBin*") { $env:Path = "$bunBin;$env:Path" }
