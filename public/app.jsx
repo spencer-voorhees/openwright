@@ -1054,8 +1054,8 @@ function InlineAgentSelect({ ws, onChange, runActive }) {
   const curInfo = agents.find((a) => a.id === cur);
   return (
     <>
-      <div className="ws-settings-row">
-        <div className="ws-settings-label">
+      <div className="ws-settings-row" style={{ alignItems: "flex-start" }}>
+        <div className="ws-settings-label" style={{ marginTop: 7 }}>
           <Icon name="bot" />
           <span>Agent</span>
         </div>
