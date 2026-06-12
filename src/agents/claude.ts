@@ -30,7 +30,24 @@ function summarizeToolInput(name: string, input: any): string {
 export const claudeAdapter: AgentAdapter = {
   id: "claude",
   label: "Claude (Agent SDK)",
-  models: ["", "claude-sonnet-4-6", "claude-opus-4-8", "claude-haiku-4-5"],
+  async listModels() {
+    // With an API key the models endpoint is authoritative; the
+    // Claude Code OAuth path can't call it, so fall back to the
+    // current generation of models.
+    if (process.env.ANTHROPIC_API_KEY) {
+      try {
+        const r = await fetch("https://api.anthropic.com/v1/models?limit=50", {
+          headers: { "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+        });
+        if (r.ok) {
+          const d: any = await r.json();
+          const ids = (d.data || []).map((m: any) => m.id).filter(Boolean);
+          if (ids.length) return ids;
+        }
+      } catch {}
+    }
+    return ["claude-fable-5", "claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5"];
+  },
 
   async available() {
     if (process.env.ANTHROPIC_API_KEY) return { ok: true, detail: `API key set · ${DEFAULT_MODEL}` };

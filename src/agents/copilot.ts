@@ -38,7 +38,19 @@ function classifyLine(line: string): { kind: "text" | "tool" | "system"; text: s
 export const copilotAdapter: AgentAdapter = {
   id: "copilot",
   label: "GitHub Copilot CLI",
-  models: ["", "auto", "claude-sonnet-4.6", "gpt-5.2"],
+  async listModels() {
+    // `copilot help config` enumerates the valid `model` values — the
+    // same list the interactive /model picker shows.
+    try {
+      const proc = Bun.spawn({ cmd: [COPILOT_BIN, "help", "config"], stdout: "pipe", stderr: "pipe" });
+      await proc.exited;
+      const out = await new Response(proc.stdout).text();
+      const block = out.split(/`model`:/)[1]?.split(/\n\s*\n/)[0] || "";
+      const models = [...block.matchAll(/"([^"]+)"/g)].map((m) => m[1]!);
+      if (models.length) return ["auto", ...models];
+    } catch {}
+    return ["auto"];
+  },
 
   async available() {
     try {

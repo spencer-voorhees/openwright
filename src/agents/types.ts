@@ -36,9 +36,10 @@ export interface AgentResult {
 export interface AgentAdapter {
   id: string;            // 'claude' | 'copilot' | 'codex' | …
   label: string;
-  // Model suggestions for the UI picker. First entry "" means
-  // "engine default"; the list is advisory, not exhaustive.
-  models: string[];
+  // Models the engine can actually run right now, probed from the
+  // CLI/API where possible. "" is implied as "engine default" by the
+  // UI and is not part of this list.
+  listModels(): Promise<string[]>;
   // Cheap preflight: is this engine usable on this machine right now?
   // Returns a human-readable detail either way (version, or what to
   // install / how to log in).

@@ -24,7 +24,20 @@ function shortPath(p: string): string {
 export const codexAdapter: AgentAdapter = {
   id: "codex",
   label: "OpenAI Codex CLI",
-  models: ["", "gpt-5.1-codex", "gpt-5.1-codex-mini", "gpt-5.1"],
+  async listModels() {
+    // Codex caches the account's selectable models (the /model picker
+    // source) at $CODEX_HOME/models_cache.json.
+    try {
+      const home = process.env.CODEX_HOME || `${process.env.HOME}/.codex`;
+      const d: any = await Bun.file(`${home}/models_cache.json`).json();
+      const slugs = (d.models || [])
+        .filter((m: any) => m.visibility === "list")
+        .map((m: any) => m.slug)
+        .filter(Boolean);
+      if (slugs.length) return slugs;
+    } catch {}
+    return ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini"];
+  },
 
   async available() {
     try {

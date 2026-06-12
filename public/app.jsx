@@ -301,6 +301,38 @@ function App() {
 // RAIL (icon sidebar)
 // ═══════════════════════════════════════════════════════════════
 
+// GitHub-style identicon: a 5x5 horizontally-mirrored pixel pattern
+// + hue, both derived from the slug. Letters render on top — the
+// pattern exists to break ties between same-initial workspaces.
+function icHash(str) {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+function Identicon({ seed, className }) {
+  const h = icHash(String(seed));
+  const hue = h % 360;
+  const cells = [];
+  let bits = h;
+  for (let r = 0; r < 5; r++) {
+    for (let c = 0; c < 3; c++) {
+      bits = (Math.imul(bits, 1103515245) + 12345) >>> 0;
+      if ((bits >>> 16) & 1) {
+        cells.push([r, c]);
+        if (c < 2) cells.push([r, 4 - c]);
+      }
+    }
+  }
+  return (
+    <svg className={className} viewBox="0 0 5 5" aria-hidden="true">
+      <rect width="5" height="5" fill={`hsl(${hue} 32% 17%)`} />
+      {cells.map(([r, c]) => (
+        <rect key={`${r}-${c}`} x={c} y={r} width="1" height="1" fill={`hsl(${hue} 52% 56%)`} />
+      ))}
+    </svg>
+  );
+}
+
 function railStatus(ws) {
   // Active gen wins.
   if (ws.active_gen_status === "running" || ws.active_gen_status === "queued") return "running";
@@ -328,7 +360,8 @@ function Rail({ workspaces, activeSlug, view, onHome, onOpen, onNew, onOpenDesig
           return (
             <button key={ws.id} className={cls} onClick={() => onOpen(ws.slug)}
               title={`${ws.name}${status !== "idle" ? " · " + (STATUS[status]?.label || status) : ""}`}>
-              {letters}
+              <Identicon seed={ws.slug} className="chip-identicon" />
+              <span className="chip-letters">{letters}</span>
               {status !== "idle" && (
                 <span className={"dot " + (STATUS[status]?.dot || "s-idle") + (animate ? " pulse" : "")} />
               )}
@@ -409,19 +442,15 @@ function SettingsView() {
 
         <div className="set-section">
           <h2 className="set-section-title">Default model</h2>
-          <p className="set-section-sub">Optional — leave blank to use the engine's own default. Suggestions follow the selected engine; free text is allowed.</p>
-          <input className="field set-model" type="text" list="global-models"
-                 placeholder={engInfo ? `engine default for ${engInfo.label}` : "engine default"}
-                 defaultValue={settings?.default_agent_model || ""}
-                 key={`gm-${eng}-${settings?.default_agent_model || ""}`}
-                 onBlur={(e) => {
-                   const v = e.target.value.trim();
-                   if (v !== (settings?.default_agent_model || "")) save({ default_agent_model: v });
-                 }}
-                 onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }} />
-          <datalist id="global-models">
-            {(engInfo?.models || []).filter(Boolean).map((m) => <option key={m} value={m} />)}
-          </datalist>
+          <p className="set-section-sub">Models the selected engine reports as available right now.</p>
+          <select className="field set-model" value={settings?.default_agent_model || ""}
+                  onChange={(e) => save({ default_agent_model: e.target.value })}>
+            <option value="">{engInfo ? `Engine default · ${engInfo.label}` : "Engine default"}</option>
+            {(engInfo?.models || []).filter(Boolean).map((m) => <option key={m} value={m}>{m}</option>)}
+            {settings?.default_agent_model && !(engInfo?.models || []).includes(settings.default_agent_model) && (
+              <option value={settings.default_agent_model}>{settings.default_agent_model}</option>
+            )}
+          </select>
         </div>
       </div>
     </div>
@@ -516,6 +545,7 @@ function PodCard({ ws, onOpen, onMenu }) {
         <Icon name="more-horizontal" />
       </button>
       <div className="pod-card-top">
+        <Identicon seed={ws.slug} className="card-identicon" />
         <div style={{ minWidth: 0 }}>
           <div className="pod-name">{ws.name}</div>
           <div className="pod-meta">
@@ -847,20 +877,18 @@ function InlineAgentSelect({ ws, onChange }) {
           {curInfo.detail}
         </span>
       )}
-      <input className="ws-settings-select" type="text" list={`models-${cur}`}
-             style={{ width: "100%" }}
-             placeholder="model (default)"
-             defaultValue={ws.agent_model || ""}
-             key={`${ws.slug}-${cur}`}
-             onBlur={async (e) => {
-               const v = e.target.value.trim();
-               if (v === (ws.agent_model || "")) return;
-               await patchJson(`/api/workspaces/${ws.slug}`, { agent_model: v });
-               onChange();
-             }} />
-      <datalist id={`models-${cur}`}>
-        {(curInfo?.models || []).filter(Boolean).map((m) => <option key={m} value={m} />)}
-      </datalist>
+      <select className="ws-settings-select" style={{ width: "100%" }}
+              value={ws.agent_model || ""}
+              onChange={async (e) => {
+                await patchJson(`/api/workspaces/${ws.slug}`, { agent_model: e.target.value });
+                onChange();
+              }}>
+        <option value="">Default model</option>
+        {(curInfo?.models || []).filter(Boolean).map((m) => <option key={m} value={m}>{m}</option>)}
+        {ws.agent_model && !(curInfo?.models || []).includes(ws.agent_model) && (
+          <option value={ws.agent_model}>{ws.agent_model}</option>
+        )}
+      </select>
     </div>
   );
 }

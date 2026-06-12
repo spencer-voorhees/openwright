@@ -194,7 +194,7 @@ a { color: var(--wp-link); }
 .pod-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
 .pod-card { position: relative; background: var(--wp-elev); border: 1px solid var(--wp-border); border-radius: var(--um-r-xl); padding: 18px 18px 15px; cursor: pointer; display: flex; flex-direction: column; gap: 13px; min-height: 180px; transition: border-color var(--um-dur-base), background var(--um-dur-base), transform var(--um-dur-base) var(--um-ease-out); }
 .pod-card:hover { border-color: var(--wp-border-strong); background: var(--wp-elev-2); }
-.pod-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.pod-card-top { display: flex; align-items: center; gap: 12px; }
 .pod-name { font-size: var(--um-text-lg); font-weight: 650; letter-spacing: -.01em; line-height: 1.25; }
 .pod-meta { font-family: var(--um-font-mono); font-size: 11px; color: var(--wp-fg-faint); margin-top: 6px; letter-spacing: .02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pod-files { display: flex; flex-direction: column; gap: 5px; }
@@ -1148,3 +1148,21 @@ textarea.field { resize: none; line-height: 1.5; }
 
 .set-model { max-width: 420px; }
 .set-empty { font-size: 12.5px; color: var(--wp-fg-muted); }
+
+/* ─── workspace identicons ──────────────────────────────────── */
+.pod-chip { position: relative; overflow: hidden; }
+.chip-identicon {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  opacity: .5; image-rendering: pixelated;
+}
+.pod-chip.active .chip-identicon, .pod-chip:hover .chip-identicon { opacity: .72; }
+.chip-letters {
+  position: relative; z-index: 1;
+  text-shadow: 0 1px 3px rgba(0,0,0,.85), 0 0 6px rgba(0,0,0,.5);
+}
+.pod-chip .dot { z-index: 2; }
+.card-identicon {
+  width: 30px; height: 30px; flex: 0 0 30px;
+  border-radius: 8px; image-rendering: pixelated;
+  border: 1px solid var(--wp-border);
+}

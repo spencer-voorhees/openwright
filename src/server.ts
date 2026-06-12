@@ -22,6 +22,17 @@ import { ADAPTERS, DEFAULT_ENGINE } from "./agents/index";
 
 const PORT = Number(process.env.OPENPOD_PORT || process.env.PORT || 8090);
 
+// Model lists are probed from CLIs/APIs — cache briefly so opening
+// settings doesn't spawn subprocesses on every request.
+const modelCache = new Map<string, { at: number; models: string[] }>();
+async function listModelsCached(a: { id: string; listModels(): Promise<string[]> }): Promise<string[]> {
+  const hit = modelCache.get(a.id);
+  if (hit && Date.now() - hit.at < 5 * 60_000) return hit.models;
+  const models = await a.listModels().catch(() => [] as string[]);
+  modelCache.set(a.id, { at: Date.now(), models });
+  return models;
+}
+
 mkdirSync(WORKSPACE_ROOT, { recursive: true });
 
 // ─── helpers ────────────────────────────────────────────────────────
@@ -836,7 +847,9 @@ function route(req: Request, url: URL): Promise<Response> | Response {
   if (url.pathname === "/api/agents" && req.method === "GET") {
     return (async () => {
       const out = [];
-      for (const a of ADAPTERS) out.push({ id: a.id, label: a.label, models: a.models, ...(await a.available()) });
+      for (const a of ADAPTERS) {
+        out.push({ id: a.id, label: a.label, models: await listModelsCached(a), ...(await a.available()) });
+      }
       const def = getSetting("default_agent_engine", DEFAULT_ENGINE);
       return json({ agents: out, default: ADAPTERS.some((a) => a.id === def) ? def : DEFAULT_ENGINE });
     })();
