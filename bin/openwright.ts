@@ -98,6 +98,7 @@ async function start(foreground = false, noOpen = false) {
     if (await healthy()) {
       console.log(`openwright running at ${URL_}  (pid ${spawnedPid ?? "?"}, logs: openwright logs)`);
       if (!noOpen) openBrowser();
+      await checkForUpdates();
       process.exit(0);
     }
     await new Promise((r) => setTimeout(r, 250));
@@ -121,6 +122,24 @@ async function status() {
   if (up) console.log(`running at ${URL_}${p ? ` (pid ${p})` : " (pid unknown — started outside the CLI)"}`);
   else if (p) console.log(`pid ${p} is alive but ${URL_} is not answering — check openwright logs`);
   else console.log("stopped");
+}
+
+// One-line update notice after a successful start: compares origin's
+// main to the local commit with a single git ls-remote (no token on a
+// public repo). Notify-only — never auto-applies, never blocks, and
+// stays silent offline or on any error.
+async function checkForUpdates() {
+  try {
+    const local = Bun.spawnSync({ cmd: ["git", "rev-parse", "HEAD"], cwd: ROOT }).stdout.toString().trim();
+    const proc = Bun.spawn({ cmd: ["git", "ls-remote", "origin", "main"], cwd: ROOT, stdout: "pipe", stderr: "ignore" });
+    const killer = setTimeout(() => { try { proc.kill(); } catch {} }, 2500);
+    const out = await new Response(proc.stdout).text();
+    clearTimeout(killer);
+    const remote = out.split(/\s/)[0];
+    if (remote && local && remote !== local) {
+      console.log("update available — run `openwright update`");
+    }
+  } catch {}
 }
 
 function logs(n = 60) {
