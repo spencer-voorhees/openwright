@@ -1963,6 +1963,31 @@ function AgentDrawer({ ws, generation, open, onOpen, onClose, busy, files, notes
   );
 }
 
+// Copilot has no ambient auth signal (the CLI lacks a status
+// command), so when it's the workspace's engine the shelf offers an
+// inline check before the user burns a run on an auth failure.
+function CopilotAuthChip() {
+  const [state, setState] = useState("idle");   // idle | checking | ok | bad
+  const [detail, setDetail] = useState("");
+  if (state === "ok")  return <span className="auth-chip is-ok" title={detail}><Icon name="shield-check" /> Copilot signed in</span>;
+  if (state === "bad") return <span className="auth-chip is-bad" title={detail}><Icon name="shield-alert" /> Not signed in. Run 'copilot login'</span>;
+  return (
+    <button className="auth-chip" disabled={state === "checking"}
+            title="Runs one minimal Copilot request to confirm auth"
+            onClick={async () => {
+              setState("checking");
+              try {
+                const r = await postJson("/api/agents/copilot/verify", {});
+                setDetail(r.detail || "");
+                setState(r.ok ? "ok" : "bad");
+              } catch (e) { setDetail(e.message); setState("bad"); }
+            }}>
+      <Icon name="shield-question" />
+      {state === "checking" ? "Checking auth…" : "Verify Copilot auth"}
+    </button>
+  );
+}
+
 function AgentPanelBody({ ws, generation, busy, files, notes, onGenerate, onReply, onSteer, hasPrior, onClose }) {
   const [messages, setMessages] = useState([]);
   const [composing, setComposing] = useState("");
@@ -2054,6 +2079,7 @@ function AgentPanelBody({ ws, generation, busy, files, notes, onGenerate, onRepl
             })()}
           </div>
         </div>
+        {!hasActive && (ws?.agent_engine === "copilot") && <CopilotAuthChip />}
         {hasActive && (
           <button className="icon-btn stop-btn" title="Stop this run (you can retry after)"
                   onClick={async () => {
