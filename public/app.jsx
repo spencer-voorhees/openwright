@@ -303,10 +303,16 @@ function App() {
 // RAIL (icon sidebar)
 // ═══════════════════════════════════════════════════════════════
 
-// Workspace identicon: a 4x4 horizontally-mirrored pixel pattern.
-// Colors are the iOS dark-mode system palette — bold, saturated,
-// built for near-black backgrounds. The tile is the color at low
-// alpha; the pattern is the color near full strength.
+// Workspace avatar: an iMessage/Telegram-style gradient tile with
+// the initials on top. Pixel identicons read as noise at 38px; a
+// smooth two-tone gradient + letters carries identity cleanly and
+// speaks the same iOS language as the rest of the UI. Uniqueness =
+// hue pair (8) x gradient angle (4) + the initials themselves.
+// Artifact paths come from the server as absolute host paths — on
+// Windows that means backslashes, which every regex/split here would
+// otherwise miss.
+function normPath(p) { return String(p || "").replace(/\\/g, "/"); }
+
 // ─── accent theming ────────────────────────────────────────────
 // One source accent drives the CSS variable family, the favicon, and
 // the rail logo (served re-tinted by /logo.svg?c=).
@@ -351,42 +357,33 @@ function useAccent() {
   return accent;
 }
 
-// Artifact paths come from the server as absolute host paths — on
-// Windows that means backslashes, which every regex/split here would
-// otherwise miss.
-function normPath(p) { return String(p || "").replace(/\\/g, "/"); }
-
 function icHash(str) {
   let h = 2166136261;
   for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
   return h >>> 0;
 }
-const IC_COLORS = ["#0A84FF", "#64D2FF", "#30D158", "#FFD60A", "#FF9F0A", "#FF375F", "#BF5AF2", "#5E5CE6"];
-function Identicon({ seed, className, soft }) {
+const AV_GRADS = [
+  ["#409CFF", "#0A6BDD"],
+  ["#7D7AFF", "#5E5CE6"],
+  ["#DA8FFF", "#BF5AF2"],
+  ["#FF7A93", "#FF2D55"],
+  ["#FFB55C", "#FF9500"],
+  ["#43D95B", "#1F9A3F"],
+  ["#5DD6F5", "#0A9BD2"],
+  ["#A6A6AD", "#63636A"],
+];
+function initialsFor(nameOrSlug) {
+  return String(nameOrSlug || "?").split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase() || "?";
+}
+function Identicon({ seed, className, letters }) {
   const h = icHash(String(seed));
-  const color = IC_COLORS[h % IC_COLORS.length];
-  const cells = [];
-  let bits = h;
-  for (let r = 0; r < 4; r++) {
-    for (let c = 0; c < 2; c++) {
-      bits = (Math.imul(bits, 1103515245) + 12345) >>> 0;
-      if ((bits >>> 16) & 1) {
-        cells.push([r, c], [r, 3 - c]);
-      }
-    }
-  }
-  // The viewBox carries a margin so corner cells sit inside the
-  // tile's border radius instead of being shaved by it. Dimming the
-  // cells muddied yellow/orange to brown, so the pattern always runs
-  // full strength — chip letters stay legible via text-shadow.
+  const [a, b] = AV_GRADS[h % AV_GRADS.length];
+  const angle = [135, 115, 160, 95][(h >>> 4) % 4];
   return (
-    <svg className={className} viewBox="-0.45 -0.45 4.9 4.9" shapeRendering="crispEdges" aria-hidden="true">
-      <rect x="-0.45" y="-0.45" width="4.9" height="4.9" fill="#101013" />
-      <rect x="-0.45" y="-0.45" width="4.9" height="4.9" fill={color} opacity="0.16" />
-      {cells.map(([r, c]) => (
-        <rect key={`${r}-${c}`} x={c} y={r} width="1" height="1" fill={color} opacity="0.92" />
-      ))}
-    </svg>
+    <span className={"avatar-grad " + (className || "")}
+          style={{ backgroundImage: `linear-gradient(${angle}deg, ${a} 0%, ${b} 100%)` }}>
+      {letters || ""}
+    </span>
   );
 }
 
@@ -450,8 +447,7 @@ function Rail({ workspaces, activeSlug, view, onHome, onOpen, onNew, onOpenDesig
           return (
             <button key={ws.id} className={cls} onClick={() => onOpen(ws.slug)}
               title={`${ws.name}${status !== "idle" ? " · " + (STATUS[status]?.label || status) : ""}`}>
-              <Identicon seed={ws.slug} className="chip-identicon" soft />
-              <span className="chip-letters">{letters}</span>
+              <Identicon seed={ws.slug} className="chip-identicon" letters={letters} />
               {status !== "idle" && (
                 <span className={"dot " + (STATUS[status]?.dot || "s-idle") + (animate ? " pulse" : "")} />
               )}
@@ -653,7 +649,7 @@ function PodCard({ ws, onOpen, onMenu }) {
         <Icon name="more-horizontal" />
       </button>
       <div className="pod-card-top">
-        <Identicon seed={ws.slug} className="card-identicon" />
+        <Identicon seed={ws.slug} className="card-identicon" letters={initialsFor(ws.name || ws.slug)} />
         <div style={{ minWidth: 0 }}>
           <div className="pod-name">{ws.name}</div>
           <div className="pod-meta">

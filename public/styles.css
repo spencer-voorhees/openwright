@@ -1191,38 +1191,24 @@ textarea.field { resize: none; line-height: 1.5; }
 .set-model { max-width: 420px; }
 .set-empty { font-size: 12.5px; color: var(--wp-fg-muted); }
 
-/* ─── workspace identicons ──────────────────────────────────── */
-/* No overflow:hidden on the chip — it would clip the status dot.
-   The svg clips itself via border-radius instead. */
+/* ─── workspace avatars (gradient + initials) ───────────────── */
+.avatar-grad {
+  display: grid; place-items: center;
+  color: #fff; font-weight: 700;
+  text-shadow: 0 1px 1px rgba(0,0,0,.22);
+  user-select: none;
+}
 .chip-identicon {
-  position: absolute; inset: 0; width: 100%; height: 100%;
-  border-radius: 10px;
-  image-rendering: pixelated;
+  position: absolute; inset: 0; border-radius: 10px;
+  font-size: 12.5px; letter-spacing: .01em;
   transition: filter var(--um-dur-fast) var(--um-ease-soft);
 }
-.pod-chip:hover .chip-identicon { filter: brightness(1.18); }
-.pod-chip.active .chip-identicon { filter: brightness(1.28) saturate(1.15); }
-.chip-letters {
-  position: relative; z-index: 1;
-  color: #fff; font-weight: 800; font-size: 12.5px;
-  letter-spacing: .01em; line-height: 1;
-  text-shadow: 0 1px 2px rgba(0,0,0,.85);
-}
-/* Quiet center: a soft dark pool under the glyphs so the letters sit
-   IN the tile instead of fighting the pattern. */
-.pod-chip::after {
-  content: ""; position: absolute; inset: 0; border-radius: 10px;
-  background: radial-gradient(circle at 50% 52%, rgba(8,8,10,.52) 0%, rgba(8,8,10,.28) 38%, transparent 68%);
-  pointer-events: none;
-}
-.pod-chip .chip-letters { z-index: 2; }
-.pod-chip .dot { z-index: 3; }
-.pod-chip.active .chip-letters, .pod-chip:hover .chip-letters { color: #fff; }
+.pod-chip:hover .chip-identicon { filter: brightness(1.1); }
+.pod-chip.active .chip-identicon { filter: brightness(1.18) saturate(1.06); }
 .pod-chip .dot { z-index: 2; }
 .card-identicon {
   width: 30px; height: 30px; flex: 0 0 30px;
-  border-radius: 8px; image-rendering: pixelated;
-  border: 1px solid var(--wp-border);
+  border-radius: 9px; font-size: 11px;
 }
 
 /* ─── accent swatches (settings) ────────────────────────────── */
