@@ -11,11 +11,18 @@ Codex CLI. Engine and model are selectable per workspace.
 
 ## Quick start
 
-One command after cloning — the wizard installs everything it needs
-(bun, an isolated Python via uv, agent CLIs) on a machine with zero
-prerequisites, asking before each optional piece:
+One line on a machine with zero prerequisites — the wizard installs
+everything it needs (bun, an isolated Python via uv, agent CLIs),
+detects engines you already have, and requires picking at least one:
 
 macOS / Linux:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/spencer-voorhees/openpod/main/install.sh | bash
+bun start            # http://localhost:8090
+```
+
+(append `-s -- -y` to the curl line for hands-off). Or from a clone:
 
 ```sh
 git clone https://github.com/spencer-voorhees/openpod && cd openpod

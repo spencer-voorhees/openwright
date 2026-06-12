@@ -12,6 +12,24 @@ $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
 function Have($cmd) { return [bool](Get-Command $cmd -ErrorAction SilentlyContinue) }
+function FindBin($name) {
+  $c = Get-Command $name -ErrorAction SilentlyContinue
+  if ($c) { return $c.Source }
+  foreach ($d in @("$env:USERPROFILE\.bun\bin", "$env:USERPROFILE\.local\bin")) {
+    foreach ($ext in @(".exe", ".cmd", "")) {
+      if (Test-Path "$d\$name$ext") { return "$d\$name$ext" }
+    }
+  }
+  if (Have "npm") {
+    $p = npm prefix -g 2>$null
+    if ($p) {
+      foreach ($ext in @(".cmd", ".exe", "")) {
+        if (Test-Path "$p\$name$ext") { return "$p\$name$ext" }
+      }
+    }
+  }
+  return $null
+}
 function Step($m) { Write-Host "`n* $m" -ForegroundColor DarkYellow }
 function Ok($m)   { Write-Host "  + $m" -ForegroundColor Green }
 function Note($m) { Write-Host "  $m" -ForegroundColor DarkGray }
@@ -68,41 +86,78 @@ if ($pybin) {
 if (-not (Test-Path ".env")) { Copy-Item ".env.example" ".env" }
 
 # -- 3. agent engines ----------------------------------------------
-Step "Agent engines (need at least one)"
+Step "Agent engines (at least one required)"
 
-if ((Have "claude") -or $env:ANTHROPIC_API_KEY) { Ok "claude — available" }
-elseif (Ask "Install Claude Code (for the Claude engine)?" $false) {
-  bun add -g "@anthropic-ai/claude-code" | Out-Null
-  Ok "claude installed — run 'claude' once to log in"
-} else { Note "claude: skipped — set ANTHROPIC_API_KEY in .env, or install later" }
+$claudeBin  = FindBin "claude"
+$copilotBin = FindBin "copilot"
+$codexBin   = FindBin "codex"
+$haveClaude  = [bool]($claudeBin -or $env:ANTHROPIC_API_KEY)
+$haveCopilot = [bool]$copilotBin
+$haveCodex   = [bool]$codexBin
 
-if (Have "copilot") { Ok "copilot — $(copilot --version 2>$null | Select-Object -First 1)" }
-elseif (Ask "Install GitHub Copilot CLI?" $false) {
-  bun add -g "@github/copilot" | Out-Null
-  Ok "copilot installed"
-} else { Note "copilot: skipped" }
-if ((Have "copilot") -and -not ($env:COPILOT_GITHUB_TOKEN -or $env:GH_TOKEN -or $env:GITHUB_TOKEN)) {
-  if ((-not $Yes) -and (Ask "Log in to Copilot now (device-code flow)?" $false)) { copilot login }
-  else { Note "auth later: run 'copilot login' (or set COPILOT_GITHUB_TOKEN)" }
+if ($haveClaude)  { Ok "detected: claude $(if ($claudeBin) { "($claudeBin)" } else { "(API key)" })" }
+if ($haveCopilot) { Ok "detected: copilot ($copilotBin)" }
+if ($haveCodex)   { Ok "detected: codex ($codexBin)" }
+if (-not ($haveClaude -or $haveCopilot -or $haveCodex)) { Note "no compatible agent CLI found on this machine" }
+
+function InstallEngine($which) {
+  switch ($which) {
+    "claude"  { bun add -g "@anthropic-ai/claude-code" | Out-Null; $script:haveClaude  = $true; Ok "claude installed — run 'claude' once to log in" }
+    "copilot" { bun add -g "@github/copilot" | Out-Null;           $script:haveCopilot = $true; Ok "copilot installed" }
+    "codex"   { bun add -g "@openai/codex" | Out-Null;             $script:haveCodex   = $true; Ok "codex installed" }
+  }
 }
 
-if (Have "codex") { Ok "codex — $(codex --version 2>$null)" }
-elseif (Ask "Install OpenAI Codex CLI?" $false) {
-  bun add -g "@openai/codex" | Out-Null
-  Ok "codex installed"
-} else { Note "codex: skipped" }
-if (Have "codex") {
-  codex login status *> $null
+if ((-not $haveClaude)  -and (Ask "Install Claude Code?" $false))        { InstallEngine "claude" }
+if ((-not $haveCopilot) -and (Ask "Install GitHub Copilot CLI?" $false)) { InstallEngine "copilot" }
+if ((-not $haveCodex)   -and (Ask "Install OpenAI Codex CLI?" $false))   { InstallEngine "codex" }
+
+# Enforce the minimum: openpod can't generate without an engine.
+if (-not ($haveClaude -or $haveCopilot -or $haveCodex)) {
+  if ($Yes) {
+    Note "installing Claude Code as the default engine"
+    InstallEngine "claude"
+  } else {
+    Write-Host "  openpod needs at least one agent engine." -ForegroundColor White
+    while (-not ($haveClaude -or $haveCopilot -or $haveCodex)) {
+      $pick = Read-Host "  Pick one to install — 1) Claude  2) Copilot  3) Codex"
+      switch ($pick) {
+        "1" { InstallEngine "claude" }
+        "2" { InstallEngine "copilot" }
+        "3" { InstallEngine "codex" }
+        default { Note "enter 1, 2, or 3" }
+      }
+    }
+  }
+}
+
+# Default engine for new workspaces — first available wins.
+$defaultEngine = "claude"
+if (-not $haveClaude -and $haveCopilot) { $defaultEngine = "copilot" }
+elseif (-not $haveClaude -and -not $haveCopilot -and $haveCodex) { $defaultEngine = "codex" }
+if (-not (Select-String -Path ".env" -Pattern "^OPENPOD_AGENT=" -Quiet -ErrorAction SilentlyContinue)) {
+  Add-Content ".env" "OPENPOD_AGENT=$defaultEngine"
+  Note "default engine: $defaultEngine (change in Settings or .env)"
+}
+
+# Auth walkthroughs.
+if ($haveCopilot -and -not ($env:COPILOT_GITHUB_TOKEN -or $env:GH_TOKEN -or $env:GITHUB_TOKEN)) {
+  if ((-not $Yes) -and (Ask "Log in to Copilot now (device-code flow)?" $false)) { & $(if ($copilotBin) { $copilotBin } else { "copilot" }) login }
+  else { Note "copilot auth later: run 'copilot login' (or set COPILOT_GITHUB_TOKEN)" }
+}
+if ($haveCodex) {
+  & $(if ($codexBin) { $codexBin } else { "codex" }) login status *> $null
   if ($LASTEXITCODE -ne 0) {
-    if ((-not $Yes) -and (Ask "Log in to Codex now (opens browser)?" $false)) { codex login }
-    else { Note "auth later: run 'codex login'" }
+    if ((-not $Yes) -and (Ask "Log in to Codex now (opens browser)?" $false)) { & $(if ($codexBin) { $codexBin } else { "codex" }) login }
+    else { Note "codex auth later: run 'codex login'" }
   }
 }
 
 # -- 4. summary -----------------------------------------------------
 Step "Done"
-$any = (Have "claude") -or (Have "copilot") -or (Have "codex") -or $env:ANTHROPIC_API_KEY
-if (-not $any) { Note "WARNING: no engine installed yet — openpod will start but can't generate" }
+if ($haveClaude)  { Ok "claude ready" }
+if ($haveCopilot) { Ok "copilot installed (auth: 'copilot login')" }
+if ($haveCodex)   { Ok "codex installed (auth: 'codex login status')" }
 Write-Host ""
 Write-Host "  Start it:   bun start" -ForegroundColor White
 Note "http://localhost:8090 — db + Oneshot design system seed on first boot."
