@@ -297,35 +297,37 @@ function App() {
 // RAIL (icon sidebar)
 // ═══════════════════════════════════════════════════════════════
 
-// GitHub-style identicon: a 5x5 horizontally-mirrored pixel pattern
-// + hue, both derived from the slug. Letters render on top — the
-// pattern exists to break ties between same-initial workspaces.
+// Workspace identicon: a 4x4 horizontally-mirrored pixel pattern.
+// Color comes from a curated palette of muted tones tuned for the
+// dark UI (not raw hue rotation — that read as confetti against the
+// slate + single-accent aesthetic). Uniqueness = pattern + tone.
 function icHash(str) {
   let h = 2166136261;
   for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
   return h >>> 0;
 }
+// [hue, sat] pairs: slate blue, steel, teal, sage, amber, rust, mauve, rose
+const IC_TONES = [[215, 34], [225, 22], [180, 30], [140, 26], [40, 34], [18, 32], [290, 24], [345, 26]];
 function Identicon({ seed, className, soft }) {
   const h = icHash(String(seed));
-  const hue = h % 360;
+  const [hue, sat] = IC_TONES[h % IC_TONES.length];
   const cells = [];
   let bits = h;
-  for (let r = 0; r < 5; r++) {
-    for (let c = 0; c < 3; c++) {
+  for (let r = 0; r < 4; r++) {
+    for (let c = 0; c < 2; c++) {
       bits = (Math.imul(bits, 1103515245) + 12345) >>> 0;
       if ((bits >>> 16) & 1) {
-        cells.push([r, c]);
-        if (c < 2) cells.push([r, 4 - c]);
+        cells.push([r, c], [r, 3 - c]);
       }
     }
   }
-  // soft = letters render on top, so the pattern is a quiet tonal
-  // texture; otherwise it's the standalone vivid mark.
-  const bg = soft ? `hsl(${hue} 36% 21%)` : `hsl(${hue} 32% 17%)`;
-  const cell = soft ? `hsl(${hue} 42% 31%)` : `hsl(${hue} 52% 56%)`;
+  // soft = letters render on top (rail chips): pattern is a quiet
+  // tonal texture. Cards get the same palette, slightly more present.
+  const bg = `hsl(${hue} ${sat}% 20%)`;
+  const cell = soft ? `hsl(${hue} ${sat}% 29%)` : `hsl(${hue} ${Math.min(sat + 6, 40)}% 40%)`;
   return (
-    <svg className={className} viewBox="0 0 5 5" aria-hidden="true">
-      <rect width="5" height="5" fill={bg} />
+    <svg className={className} viewBox="0 0 4 4" aria-hidden="true">
+      <rect width="4" height="4" fill={bg} />
       {cells.map(([r, c]) => (
         <rect key={`${r}-${c}`} x={c} y={r} width="1" height="1" fill={cell} />
       ))}
