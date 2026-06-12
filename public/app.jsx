@@ -329,7 +329,7 @@ function Identicon({ seed, className, soft }) {
       <rect x="-0.45" y="-0.45" width="4.9" height="4.9" fill="#101013" />
       <rect x="-0.45" y="-0.45" width="4.9" height="4.9" fill={color} opacity="0.16" />
       {cells.map(([r, c]) => (
-        <rect key={`${r}-${c}`} x={c} y={r} width="1" height="1" rx="0.13" fill={color} opacity="0.92" />
+        <rect key={`${r}-${c}`} x={c} y={r} width="1.001" height="1.001" fill={color} opacity="0.92" />
       ))}
     </svg>
   );
@@ -702,6 +702,10 @@ function WorkspaceView({ slug, wsTab, setWsTab, onBack, onChange }) {
   const [activeArtifactId, setActiveArtifactId] = useState(null);
   const [composerBusy, setComposerBusy] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // On mobile the agent pane's visibility is the Files/Agent tab, not
+  // the drawer flag — open/close must drive both or taps appear dead.
+  const openAgent = useCallback(() => { setDrawerOpen(true); setWsTab("agent"); }, [setWsTab]);
+  const closeAgent = useCallback(() => { setDrawerOpen(false); setWsTab("files"); }, [setWsTab]);
 
   const refresh = useCallback(async () => {
     try {
@@ -770,7 +774,8 @@ function WorkspaceView({ slug, wsTab, setWsTab, onBack, onChange }) {
         <button className={wsTab === "files" ? "on" : ""} onClick={() => setWsTab("files")}>
           <Icon name="folder" /> Files
         </button>
-        <button className={wsTab === "agent" ? "on" : ""} onClick={() => setWsTab("agent")}>
+        <button className={wsTab === "agent" ? "on" : ""}
+                onClick={() => setWsTab(wsTab === "agent" ? "files" : "agent")}>
           <Icon name="bot" /> Agent
         </button>
       </div>
@@ -781,17 +786,17 @@ function WorkspaceView({ slug, wsTab, setWsTab, onBack, onChange }) {
                     onSelectArtifact={(id) => { setActiveArtifactId(id); setActiveGen(null); }}
                     onBack={onBack} onChange={refresh}
                     onActivate={(id) => setActiveGen(id)}
-                    onOpenAgent={() => setDrawerOpen(true)} />
+                    onOpenAgent={openAgent} />
       </div>
       <AgentDrawer
         ws={ws} generation={activeGenRow}
         open={drawerOpen}
-        onOpen={() => setDrawerOpen(true)}
-        onClose={() => setDrawerOpen(false)}
+        onOpen={openAgent}
+        onClose={closeAgent}
         hasPrior={generations.some((g) => g.status === "done" && g.artifact_path)}
         onGenerate={async (prompt, { fresh = false } = {}) => {
           setComposerBusy(true);
-          setDrawerOpen(true);
+          openAgent();
           try {
             const d = await postJson(`/api/workspaces/${slug}/generate`,
                                       { prompt: prompt?.trim() || undefined, fresh,

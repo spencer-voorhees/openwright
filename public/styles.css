@@ -950,8 +950,10 @@ textarea.field { resize: none; line-height: 1.5; }
   .dash-head > .btn-primary { margin-top: 0; }
   /* Name block takes the full first row; comments + version picker
      drop to a second row instead of crushing the filename. */
-  /* !important: the element carries an inline flex:1 (basis 0). */
-  .artifact-head .artifact-info { flex-basis: 100% !important; }
+  /* !important: the element carries an inline flex:1 (basis 0).
+     Leave room for the 44px icon so name+icon share the first row;
+     the comment + version controls wrap to the next. */
+  .artifact-head .artifact-info { flex-basis: calc(100% - 60px) !important; }
   .dash-title { font-size: var(--um-text-3xl); }
   .dash-sub { font-size: var(--um-text-base); }
   .dash-head .btn-primary { align-self: flex-start; }
@@ -972,7 +974,10 @@ textarea.field { resize: none; line-height: 1.5; }
   .ws-tab-files .agent-drawer, .ws-tab-files .agent-panel { display: none; }
   .ws-tab-agent .ws-main { display: none; }
   .model-pill { display: none; }
-  .panel-head { min-height: 54px; padding: 11px 16px; }
+  .panel-head { min-height: 54px; padding: 12px 16px; align-items: flex-start; }
+  .panel-head > .icon-btn { margin-top: 1px; }
+  .panel-head .pill { margin-top: 5px; }
+  .crumb .ws-settings { flex-basis: 100%; margin-top: 8px; }
   .files-body { padding: 16px 16px 32px; }
   .agent-head { min-height: 54px; padding: 11px 16px; }
   .chat { padding: 18px 16px 8px; }
@@ -1009,6 +1014,20 @@ textarea.field { resize: none; line-height: 1.5; }
   /* Artifact head: let the meta line wrap as one block instead of
      orphaning the last word. */
   .artifact-head .fmeta, .artifact-sub { white-space: normal; }
+}
+
+@media (max-width: 760px) {
+  /* Popovers: anchor to the full-width bar, not the button — right- or
+     left-anchored panels were running off the viewport edge. */
+  .artifact-head { position: relative; }
+  .artifact-head .vsel, .artifact-head .comments-hub { position: static; }
+  .artifact-head .vhist, .artifact-head .chist { left: 10px; right: 10px; width: auto; min-width: 0; }
+  /* Desktop opens the comments hub upward over the tall preview; on
+     mobile the bar sits high after scroll, so upward goes offscreen. */
+  .artifact-head .chist { bottom: auto; top: calc(100% + 6px); max-height: min(58vh, 480px); }
+  .panel-head { position: relative; }
+  .panel-head .ws-settings-wrap, .panel-head .ws-chip-artifact { position: static; }
+  .panel-head .ws-settings-pop, .panel-head .vhist { left: 10px; right: 10px; width: auto; min-width: 0; max-width: none; }
 }
 
 @media (max-width: 420px) {
