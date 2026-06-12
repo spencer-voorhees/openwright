@@ -626,23 +626,28 @@ function PodCard({ ws, onOpen, onMenu }) {
   // artifact path; live preview of file names requires a workspace fetch.
   const [files, setFiles] = useState(null);
   const [latestGen, setLatestGen] = useState(null);
+  const [gens, setGens] = useState(null);
   useEffect(() => {
     let cancelled = false;
     fetchJson(`/api/workspaces/${ws.slug}`).then((d) => {
       if (cancelled) return;
       setFiles(d.files || []);
-      // Find most recent generation with an artifact
-      const gens = d.generations || [];
-      setLatestGen(gens.find((g) => g.artifact_path && g.status === "done") || gens[0] || null);
-      // Stash on the workspace ref so podStatus() can use it.
-      ws._gens = gens;
+      const list = d.generations || [];
+      setGens(list);
+      setLatestGen(list.find((g) => g.artifact_path && g.status === "done") || list[0] || null);
+      // Also stash on the workspace ref for the dashboard's active
+      // filter. NOTE: the 5s poll replaces ws objects, so the stash
+      // is best-effort — component state is the source of truth here
+      // (the old stash-only approach made the status pill vanish on
+      // the first poll after load).
+      ws._gens = list;
     }).catch(() => {});
     return () => { cancelled = true; };
-  }, [ws.slug, ws.gen_count, ws.file_count]);
+  }, [ws.slug, ws.gen_count, ws.file_count, ws.active_gen_id]);
 
   const preview = (files || []).slice(0, 3);
   const extra = (files?.length || 0) - preview.length;
-  const status = podStatus(ws._gens || []);
+  const status = ws.active_gen_status || podStatus(gens || []);
   return (
     <div className="pod-card fade-up" onClick={() => onOpen(ws.slug)}>
       <button className="icon-btn pod-menu-btn" onClick={(e) => onMenu(e, ws)}>
