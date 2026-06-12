@@ -1232,9 +1232,10 @@ select option { background-color: #161618; color: #f5f5f7; }
 .set-agent-verify:hover { color: var(--wp-fg); border-color: var(--wp-border-strong); }
 .set-agent-verify:disabled { opacity: .6; cursor: default; }
 
-/* Header toggle for the agent panel */
+/* Header toggle for the agent panel — the workspace's primary CTA,
+   so it carries the accent like the dashboard's New workspace. */
 .agent-open-btn { gap: 7px; }
-.agent-open-btn.on { color: var(--wp-accent); border-color: var(--wp-accent-line); background: var(--wp-accent-tint); }
+.agent-open-btn .pdot { box-shadow: 0 0 0 1.5px rgba(0,0,0,.25); }
 @media (max-width: 760px) {
   /* Mobile has the Files/Agent tab bar — the header button is noise there. */
   .agent-open-btn { display: none; }

@@ -1206,7 +1206,7 @@ function FilesPanel({ ws, files, notes, generations, artifacts, activeArtifactId
             lastMessageAt={active.last_message_at}
             phase={active.phase} />;
         })()}
-        <button className={"btn btn-ghost agent-open-btn" + (agentOpen ? " on" : "")}
+        <button className={"btn btn-primary agent-open-btn" + (agentOpen ? " on" : "")}
                 title={agentOpen ? "Close the agent panel" : "Open the agent panel"}
                 onClick={onToggleAgent}>
           <Icon name="bot" />
