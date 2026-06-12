@@ -67,7 +67,8 @@ fi
 
 step "JS dependencies"
 bun install --silent
-ok "installed"
+bun link --silent >/dev/null 2>&1 || bun link
+ok "installed (+ openwright CLI on PATH)"
 
 # ── 2. python toolchain via uv (exports — recommended) ──────────
 step "Exporters: PDF + editable PPTX (python)"

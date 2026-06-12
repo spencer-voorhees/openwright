@@ -56,7 +56,8 @@ else {
 
 Step "JS dependencies"
 bun install --silent
-Ok "installed"
+bun link 2>$null | Out-Null
+Ok "installed (+ openwright CLI on PATH)"
 
 # -- 2. python via uv ----------------------------------------------
 Step "Exporters: PDF + editable PPTX (python)"
@@ -159,6 +160,8 @@ if ($haveClaude)  { Ok "claude ready" }
 if ($haveCopilot) { Ok "copilot installed (auth: 'copilot login')" }
 if ($haveCodex)   { Ok "codex installed (auth: 'codex login status')" }
 Write-Host ""
-Write-Host "  Start it:   bun start" -ForegroundColor White
-Note "http://localhost:8090 - db + Oneshot design system seed on first boot."
+Write-Host "  Start it:   openwright start" -ForegroundColor White
+Note "(if the command is not found, open a NEW terminal first - the"
+Note "PATH update lands in fresh sessions)"
+Note "Also: openwright stop / status / logs / open / update"
 Write-Host ""

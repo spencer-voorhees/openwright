@@ -10,3 +10,5 @@ __pycache__/
 *.db-wal
 .env
 exports/
+.openwright.pid
+openwright.log

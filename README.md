@@ -19,7 +19,7 @@ macOS / Linux:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/spencer-voorhees/openwright/main/install.sh | bash
-bun start            # http://localhost:8090
+openwright start     # http://localhost:8090
 ```
 
 (append `-s -- -y` to the curl line for hands-off). Or from a clone:
@@ -34,8 +34,11 @@ Windows (PowerShell):
 
 ```powershell
 irm https://raw.githubusercontent.com/spencer-voorhees/openwright/main/install.ps1 | iex
-bun start
+openwright start
 ```
+
+If `openwright` isn't recognized right after setup, open a new
+terminal — the PATH update lands in fresh sessions.
 
 Or from a clone: `powershell -ExecutionPolicy Bypass -File setup.ps1`
 (add `-Yes` for hands-off).
@@ -47,6 +50,16 @@ needed), and can walk you through `copilot login` / `codex login`
 on the spot. PDF export resolves Chrome from playwright's chromium,
 puppeteer's cache, or a system Chrome/Edge install (override with
 `OPENWRIGHT_CHROME`).
+
+### The CLI
+
+Setup links an `openwright` command globally:
+
+```
+openwright start | stop | restart | status | logs [n] | open | update | setup
+```
+
+`update` pulls the latest, reinstalls deps, and restarts if running.
 
 ### Agent auth (any one is enough)
 
