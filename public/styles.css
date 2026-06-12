@@ -334,7 +334,10 @@ a { color: var(--wp-link); }
 .vsel { position: relative; }
 .vsel-btn { display: inline-flex; align-items: center; gap: 6px; background: var(--wp-elev-2); border: 1px solid var(--wp-border); border-radius: 999px; padding: 5px 10px 5px 11px; color: var(--wp-fg); font-family: var(--um-font-mono); font-size: 11.5px; cursor: pointer; }
 .vsel-btn:hover { border-color: var(--wp-border-strong); }
-.artifact-foot { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-top: 1px solid var(--wp-border); background: rgba(0,0,0,0.2); }
+/* Bottom corners follow the card's curve: the card itself can't use
+   overflow:hidden (the comments dropdown escapes it), so this tinted
+   strip must round itself or its dark corners poke past the radius. */
+.artifact-foot { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-top: 1px solid var(--wp-border); background: rgba(0,0,0,0.2); border-radius: 0 0 calc(var(--um-r-lg) - 1px) calc(var(--um-r-lg) - 1px); }
 
 /* Live deck preview iframe shown above the artifact-head when the
    current artifact is an HTML file. 16:9 aspect ratio so the
