@@ -1,0 +1,12 @@
+node_modules/
+workspaces/
+*.db
+*.db-journal
+.DS_Store
+__pycache__/
+*.pyc
+.venv/
+*.db-shm
+*.db-wal
+.env
+exports/

@@ -1,0 +1,956 @@
+// openpod HTTP server. Bun + bun:sqlite. Serves the React SPA from
+// public/ and the REST API at /api/*.
+//
+// API surface (see README for details):
+//   GET    /api/workspaces
+//   POST   /api/workspaces                        {name}
+//   GET    /api/workspaces/:slug
+//   POST   /api/workspaces/:slug/files            multipart
+//   DELETE /api/workspaces/:slug/files/:id
+//   POST   /api/workspaces/:slug/notes            {title?, content, mode?}
+//   POST   /api/workspaces/:slug/generate         {prompt?}
+//   GET    /api/generations/:id
+//   POST   /api/generations/:id/reply             {content}   (answers an ASK)
+//   POST   /api/generations/:id/steer             {content}   (mid-flight user message)
+//   GET    /api/artifacts/:gen_id                 (latest artifact)
+//   GET    /api/files/:id                         (download a workspace file)
+import { mkdirSync, writeFileSync, statSync, unlinkSync, existsSync, readFileSync } from "node:fs";
+import { join, extname } from "node:path";
+import { db } from "./db";
+import { startGeneration, postUserReply, postSteer, reapStrandedGenerations, stopGeneration, WORKSPACE_ROOT } from "./agent";
+import { ADAPTERS, DEFAULT_ENGINE } from "./agents/index";
+
+const PORT = Number(process.env.OPENPOD_PORT || process.env.PORT || 8090);
+
+mkdirSync(WORKSPACE_ROOT, { recursive: true });
+
+// ─── helpers ────────────────────────────────────────────────────────
+
+function json(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "content-type": "application/json", "cache-control": "no-store" },
+  });
+}
+
+function err(message: string, status = 400) {
+  return json({ error: message }, status);
+}
+
+function slugify(s: string): string {
+  const base = s.toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40) || "workspace";
+  // uniquify
+  let candidate = base;
+  let n = 2;
+  while (db.query("SELECT 1 FROM workspaces WHERE slug = ?").get(candidate)) {
+    candidate = `${base}-${n++}`;
+  }
+  return candidate;
+}
+
+function workspaceBySlug(slug: string) {
+  return db.query("SELECT * FROM workspaces WHERE slug = ?").get(slug) as any;
+}
+
+function workspaceDir(slug: string) {
+  const dir = join(WORKSPACE_ROOT, slug);
+  mkdirSync(join(dir, "files"), { recursive: true });
+  mkdirSync(join(dir, "artifacts"), { recursive: true });
+  mkdirSync(join(dir, "notes"), { recursive: true });
+  return dir;
+}
+
+// ─── handlers ───────────────────────────────────────────────────────
+
+async function listWorkspaces() {
+  const rows = db.query(`
+    SELECT w.*,
+           (SELECT COUNT(*) FROM files       WHERE workspace_id = w.id) AS file_count,
+           (SELECT COUNT(*) FROM generations WHERE workspace_id = w.id) AS gen_count,
+           (SELECT artifact_path FROM generations
+             WHERE workspace_id = w.id AND status = 'done'
+             ORDER BY completed_at DESC LIMIT 1) AS latest_artifact,
+           (SELECT completed_at FROM generations
+             WHERE workspace_id = w.id AND status = 'done'
+             ORDER BY completed_at DESC LIMIT 1) AS latest_done_at,
+           (SELECT id FROM generations
+             WHERE workspace_id = w.id
+               AND status IN ('queued','running','validating','awaiting_user')
+             ORDER BY id DESC LIMIT 1) AS active_gen_id,
+           (SELECT status FROM generations WHERE id = (
+             SELECT id FROM generations
+              WHERE workspace_id = w.id
+                AND status IN ('queued','running','validating','awaiting_user')
+              ORDER BY id DESC LIMIT 1)) AS active_gen_status,
+           (SELECT phase FROM generations WHERE id = (
+             SELECT id FROM generations
+              WHERE workspace_id = w.id
+                AND status IN ('queued','running','validating','awaiting_user')
+              ORDER BY id DESC LIMIT 1)) AS active_gen_phase,
+           (SELECT started_at FROM generations WHERE id = (
+             SELECT id FROM generations
+              WHERE workspace_id = w.id
+                AND status IN ('queued','running','validating','awaiting_user')
+              ORDER BY id DESC LIMIT 1)) AS active_gen_started_at,
+           (SELECT MAX(ts) FROM messages WHERE generation_id = (
+             SELECT id FROM generations
+              WHERE workspace_id = w.id
+                AND status IN ('queued','running','validating','awaiting_user')
+              ORDER BY id DESC LIMIT 1)) AS active_gen_last_message_at,
+           (SELECT validator_iteration FROM generations WHERE id = (
+             SELECT id FROM generations
+              WHERE workspace_id = w.id
+                AND status IN ('queued','running','validating','awaiting_user')
+              ORDER BY id DESC LIMIT 1)) AS active_gen_iter
+    FROM workspaces w ORDER BY created_at DESC
+  `).all();
+  return json({ workspaces: rows });
+}
+
+const KNOWN_THEMES = new Set(["oneshot", "boardroom", "apple", "editorial", "graphite", "aurora", "twilight", "manuscript", "monolith", "bladerunner", "vesper", "apollo", "geist", "default"]);
+const KNOWN_ENGINES = new Set(["html"]);
+const KNOWN_PERSONAS = new Set(["terse-technical", "executive", "detailed", "mixed-audience"]);
+
+// ─── design systems ───────────────────────────────────────────────────
+// Workspace-agnostic CSS bundles. A workspace points at one via
+// workspaces.design_system_id; the agent prompt links to the live CSS
+// URL so any edit to the system shows up next reload.
+
+async function listDesignSystems() {
+  const rows = db.query(
+    `SELECT id, name, slug, description, length(css) as css_size, created_at, updated_at
+     FROM design_systems ORDER BY id ASC`).all();
+  return json({ design_systems: rows });
+}
+
+async function getDesignSystem(id: string) {
+  const row = db.query("SELECT * FROM design_systems WHERE id = ?").get(id) as any;
+  if (!row) return err("not found", 404);
+  return json({ design_system: row });
+}
+
+async function createDesignSystem(req: Request) {
+  const { name, css, description, from_id } = await req.json() as
+    { name: string; css?: string; description?: string; from_id?: number };
+  if (!name || !name.trim()) return err("name required");
+  let base = slugify(name.trim());
+  if (!base) base = "system";
+  let candidate = base;
+  let n = 2;
+  while (db.query("SELECT 1 FROM design_systems WHERE slug = ?").get(candidate)) {
+    candidate = `${base}-${n++}`;
+  }
+  let cssContent = css ?? "";
+  // Optional clone-from: copy CSS from an existing system as starting point.
+  if (!cssContent && from_id) {
+    const src = db.query("SELECT css FROM design_systems WHERE id = ?").get(from_id) as any;
+    if (src) cssContent = src.css || "";
+  }
+  if (!cssContent) {
+    // New systems start as a themed copy of Oneshot — it is the
+    // export-lossless baseline, so every derivative stays portable.
+    const oneshot = db.query("SELECT css FROM design_systems WHERE slug = 'oneshot'").get() as any;
+    cssContent = `/* ${name.trim()} — themed from Oneshot. Restyle via tokens; keep structural rules intact for export fidelity. */\n` + (oneshot?.css || "");
+  }
+  const now = Date.now();
+  const ins = db.run(
+    "INSERT INTO design_systems(name, slug, css, description, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?)",
+    [name.trim(), candidate, cssContent, description?.trim() || null, now, now]) as any;
+  return json({ design_system: db.query("SELECT * FROM design_systems WHERE id = ?").get(Number(ins.lastInsertRowid)) }, 201);
+}
+
+async function updateDesignSystem(id: string, req: Request) {
+  const row = db.query("SELECT * FROM design_systems WHERE id = ?").get(id) as any;
+  if (!row) return err("not found", 404);
+  const body = await req.json() as { name?: string; css?: string; description?: string };
+  const sets: string[] = [];
+  const vals: any[] = [];
+  if (body.name !== undefined && body.name.trim()) { sets.push("name = ?"); vals.push(body.name.trim()); }
+  if (body.css !== undefined) { sets.push("css = ?"); vals.push(body.css); }
+  if (body.description !== undefined) { sets.push("description = ?"); vals.push(body.description); }
+  if (sets.length === 0) return json({ design_system: row });
+  sets.push("updated_at = ?"); vals.push(Date.now());
+  vals.push(row.id);
+  db.run(`UPDATE design_systems SET ${sets.join(", ")} WHERE id = ?`, vals);
+  return json({ design_system: db.query("SELECT * FROM design_systems WHERE id = ?").get(row.id) });
+}
+
+async function deleteDesignSystem(id: string) {
+  const row = db.query("SELECT * FROM design_systems WHERE id = ?").get(id) as any;
+  if (!row) return err("not found", 404);
+  // Don't allow deleting a system that's currently in use unless the
+  // caller passes ?force=1 — protects against accidental link-breakage.
+  const inUse = db.query("SELECT COUNT(*) AS c FROM workspaces WHERE design_system_id = ?").get(row.id) as any;
+  if (inUse?.c > 0) return err(`${inUse.c} workspace(s) reference this design system`, 409);
+  db.run("DELETE FROM design_systems WHERE id = ?", [row.id]);
+  return json({ ok: true });
+}
+
+// Serve the CSS content as a stylesheet so the deck shell can link to
+// it directly. Path: /api/design-systems/:id/css.css (Spencer reads
+// the resource as a stylesheet — Bun infers the content type from the
+// .css suffix on the URL, but we set it explicitly for safety).
+async function designSystemCss(id: string) {
+  const row = db.query("SELECT css FROM design_systems WHERE id = ?").get(id) as any;
+  if (!row) return new Response("/* design system not found */", { status: 404, headers: { "content-type": "text/css" } });
+  return new Response(row.css || "", {
+    headers: { "content-type": "text/css; charset=utf-8", "cache-control": "no-cache" },
+  });
+}
+
+async function createWorkspace(req: Request) {
+  const { name, use_opus, validate, engine, theme, design_system_id, agent_engine } = await req.json() as
+    { name: string; use_opus?: boolean; validate?: boolean; engine?: string; theme?: string; design_system_id?: number; agent_engine?: string };
+  if (!name || !name.trim()) return err("name required");
+  const slug = slugify(name.trim());
+  const now = Date.now();
+  const eng = engine && KNOWN_ENGINES.has(engine) ? engine : "html";
+  // Default design system for new workspaces: Oneshot — engineered to
+  // survive the editable-PPTX export losslessly.
+  const th = theme && KNOWN_THEMES.has(theme) ? theme : "oneshot";
+  // Resolve the design system. If the client passed an id, use it.
+  // Otherwise fall back to the system whose slug matches `theme`, then
+  // to whatever the first seeded system is. This keeps html mode (which
+  // reads design_system_id) functional out of the box.
+  let dsId: number | null = null;
+  if (design_system_id) {
+    const ds = db.query("SELECT id FROM design_systems WHERE id = ?").get(design_system_id) as any;
+    if (ds) dsId = ds.id;
+  }
+  if (!dsId) {
+    const bySlug = db.query("SELECT id FROM design_systems WHERE slug = ?").get(th) as any;
+    if (bySlug) dsId = bySlug.id;
+  }
+  if (!dsId) {
+    const first = db.query("SELECT id FROM design_systems ORDER BY id ASC LIMIT 1").get() as any;
+    if (first) dsId = first.id;
+  }
+  const agentEng = agent_engine && ADAPTERS.some((a) => a.id === agent_engine) ? agent_engine : DEFAULT_ENGINE;
+  db.run("INSERT INTO workspaces(slug, name, created_at, use_opus, validate, engine, theme, design_system_id, agent_engine) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         [slug, name.trim(), now, use_opus ? 1 : 0, validate === false ? 0 : 1, eng, th, dsId, agentEng]);
+  workspaceDir(slug);
+  return json({ workspace: workspaceBySlug(slug) }, 201);
+}
+
+async function updateWorkspace(slug: string, req: Request) {
+  const w = workspaceBySlug(slug);
+  if (!w) return err("not found", 404);
+  const body = await req.json() as { use_opus?: boolean; validate?: boolean; name?: string; engine?: string; theme?: string; design_system_id?: number; persona?: string; agent_engine?: string; agent_model?: string };
+  const sets: string[] = [];
+  const vals: any[] = [];
+  if (body.use_opus !== undefined) { sets.push("use_opus = ?"); vals.push(body.use_opus ? 1 : 0); }
+  if (body.validate !== undefined) { sets.push("validate = ?"); vals.push(body.validate ? 1 : 0); }
+  if (body.engine !== undefined && KNOWN_ENGINES.has(body.engine)) {
+    sets.push("engine = ?"); vals.push(body.engine);
+  }
+  if (body.theme !== undefined && KNOWN_THEMES.has(body.theme)) {
+    sets.push("theme = ?"); vals.push(body.theme);
+  }
+  if (body.design_system_id !== undefined) {
+    const ds = db.query("SELECT id, slug FROM design_systems WHERE id = ?").get(body.design_system_id) as any;
+    if (!ds) return err("design_system_id not found", 404);
+    sets.push("design_system_id = ?"); vals.push(ds.id);
+    // Mirror the slug into the legacy theme column so the agent prompt
+    // pre-html-engine still gets a sensible label.
+    sets.push("theme = ?"); vals.push(ds.slug);
+  }
+  if (body.name && body.name.trim()) { sets.push("name = ?"); vals.push(body.name.trim()); }
+  if (body.persona !== undefined && KNOWN_PERSONAS.has(body.persona)) {
+    sets.push("persona = ?"); vals.push(body.persona);
+  }
+  if (body.agent_engine !== undefined && ADAPTERS.some((a) => a.id === body.agent_engine)) {
+    sets.push("agent_engine = ?"); vals.push(body.agent_engine);
+  }
+  if (body.agent_model !== undefined) {
+    sets.push("agent_model = ?"); vals.push(String(body.agent_model || "").trim());
+  }
+  if (sets.length === 0) return json({ workspace: w });
+  vals.push(w.id);
+  db.run(`UPDATE workspaces SET ${sets.join(", ")} WHERE id = ?`, vals);
+  return json({ workspace: workspaceBySlug(slug) });
+}
+
+async function getWorkspace(slug: string) {
+  const w = workspaceBySlug(slug);
+  if (!w) return err("not found", 404);
+  const files = db.query("SELECT * FROM files WHERE workspace_id = ? ORDER BY uploaded_at DESC").all(w.id);
+  const artifacts = db.query(
+    "SELECT * FROM artifacts WHERE workspace_id = ? ORDER BY id ASC"
+  ).all(w.id);
+  const generations = db.query(
+    `SELECT g.id, g.prompt, g.status, g.started_at, g.completed_at, g.error,
+            g.artifact_path, g.artifact_version, g.artifact_id,
+            g.validator_iteration, g.validator_verdict, g.phase,
+            (SELECT MAX(ts) FROM messages WHERE generation_id = g.id) AS last_message_at
+     FROM generations g WHERE g.workspace_id = ? ORDER BY g.id DESC`).all(w.id);
+  for (const g of generations as any[]) {
+  }
+  return json({ workspace: w, files, artifacts, generations });
+}
+
+async function uploadFiles(slug: string, req: Request) {
+  const w = workspaceBySlug(slug);
+  if (!w) return err("workspace not found", 404);
+  const form = await req.formData();
+  const dir = workspaceDir(slug);
+  const filesDir = join(dir, "files");
+  const saved: any[] = [];
+  for (const [, value] of form.entries()) {
+    if (!(value instanceof File)) continue;
+    const safeName = value.name.replace(/[\\/]/g, "_");
+    // Avoid clobbering — prefix duplicates with a timestamp.
+    let target = join(filesDir, safeName);
+    if (existsSync(target)) {
+      const ext = extname(safeName);
+      const base = safeName.slice(0, safeName.length - ext.length);
+      target = join(filesDir, `${base}-${Date.now()}${ext}`);
+    }
+    const buf = Buffer.from(await value.arrayBuffer());
+    writeFileSync(target, buf);
+    const now = Date.now();
+    const result = db.run(
+      `INSERT INTO files(workspace_id, name, mimetype, size, path, uploaded_at)
+       VALUES(?, ?, ?, ?, ?, ?)`,
+      [w.id, safeName, value.type || null, value.size, target, now]) as any;
+    saved.push(db.query("SELECT * FROM files WHERE id = ?").get(result.lastInsertRowid));
+  }
+  return json({ files: saved }, 201);
+}
+
+async function deleteWorkspace(slug: string) {
+  const w = workspaceBySlug(slug);
+  if (!w) return err("not found", 404);
+  // Best-effort filesystem cleanup; the DB delete cascades to
+  // files / generations / messages.
+  const dir = join(WORKSPACE_ROOT, slug);
+  try {
+    const fs = await import("node:fs");
+    fs.rmSync(dir, { recursive: true, force: true });
+  } catch {}
+  db.run("DELETE FROM workspaces WHERE id = ?", [w.id]);
+  return json({ ok: true });
+}
+
+async function deleteFile(slug: string, fileId: string) {
+  const w = workspaceBySlug(slug);
+  if (!w) return err("workspace not found", 404);
+  const f = db.query("SELECT * FROM files WHERE id = ? AND workspace_id = ?").get(fileId, w.id) as any;
+  if (!f) return err("file not found", 404);
+  try { unlinkSync(f.path); } catch {}
+  db.run("DELETE FROM files WHERE id = ?", [f.id]);
+  return json({ ok: true });
+}
+
+async function downloadFile(fileId: string) {
+  const f = db.query("SELECT * FROM files WHERE id = ?").get(fileId) as any;
+  if (!f || !existsSync(f.path)) return err("not found", 404);
+  return new Response(Bun.file(f.path), {
+    headers: {
+      "content-type": f.mimetype || "application/octet-stream",
+      "content-disposition": `attachment; filename="${f.name}"`,
+    },
+  });
+}
+
+async function quickNote(slug: string, req: Request) {
+  const w = workspaceBySlug(slug);
+  if (!w) return err("workspace not found", 404);
+  const { title, content, mode = "new" } = await req.json() as
+    { title?: string; content: string; mode?: "new" | "append" };
+  if (!content || !content.trim()) return err("content required");
+
+  const notesDir = join(workspaceDir(slug), "notes");
+  let target: string;
+  if (mode === "append") {
+    target = join(notesDir, "notes.md");
+    const stamp = new Date().toISOString().slice(0, 16).replace("T", " ");
+    const append = `\n\n## ${stamp}${title ? " — " + title : ""}\n${content.trim()}\n`;
+    const existing = existsSync(target) ? readFileSync(target, "utf-8") : "# Notes\n";
+    writeFileSync(target, existing + append);
+  } else {
+    const stamp = new Date().toISOString().slice(0, 16).replace(/[T:]/g, "-");
+    const fname = (title ? `${stamp}-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}` : stamp) + ".md";
+    target = join(notesDir, fname);
+    const body = (title ? `# ${title}\n\n` : "") + content.trim() + "\n";
+    writeFileSync(target, body);
+  }
+  // Also register as a file so it shows up in the workspace file list.
+  const st = statSync(target);
+  const fileName = target.split("/").pop()!;
+  // If "append" mode and notes.md already tracked, just bump its mtime.
+  const existing = db.query("SELECT id FROM files WHERE path = ?").get(target) as any;
+  if (existing) {
+    db.run("UPDATE files SET size = ?, uploaded_at = ? WHERE id = ?",
+           [st.size, Date.now(), existing.id]);
+  } else {
+    db.run(`INSERT INTO files(workspace_id, name, mimetype, size, path, uploaded_at)
+            VALUES(?, ?, ?, ?, ?, ?)`,
+           [w.id, fileName, "text/markdown", st.size, target, Date.now()]);
+  }
+  return json({ ok: true, path: target }, 201);
+}
+
+async function kickoffGeneration(slug: string, req: Request) {
+  const w = workspaceBySlug(slug);
+  if (!w) return err("workspace not found", 404);
+  const { prompt, fresh, artifact_id } = await req.json().catch(() => ({})) as
+    { prompt?: string; fresh?: boolean; artifact_id?: number };
+  // Resolve the artifact this generation belongs to: explicit id from
+  // the request, else the latest artifact for the workspace, else
+  // create a default one.
+  let art_id: number | null = artifact_id ?? null;
+  if (art_id) {
+    const a = db.query("SELECT id FROM artifacts WHERE id = ? AND workspace_id = ?").get(art_id, w.id) as any;
+    if (!a) return err("artifact not found in this workspace", 404);
+  } else {
+    const a = db.query(
+      "SELECT id FROM artifacts WHERE workspace_id = ? ORDER BY id DESC LIMIT 1"
+    ).get(w.id) as any;
+    if (a) {
+      art_id = a.id;
+    } else {
+      const ins = db.run(
+        "INSERT INTO artifacts(workspace_id, name, slug, created_at) VALUES(?, ?, ?, ?)",
+        [w.id, "Untitled", "untitled", Date.now()]) as any;
+      art_id = Number(ins.lastInsertRowid);
+    }
+  }
+  const now = Date.now();
+  const result = db.run(
+    `INSERT INTO generations(workspace_id, artifact_id, prompt, status, started_at)
+     VALUES(?, ?, ?, 'queued', ?)`,
+    [w.id, art_id, prompt || null, now]) as any;
+  const gen_id = Number(result.lastInsertRowid);
+  startGeneration(gen_id, { fresh: !!fresh }).catch((e) => {
+    console.error("[generation]", gen_id, e);
+    db.run("UPDATE generations SET status='errored', error=?, completed_at=? WHERE id=?",
+           [String(e?.message || e), Date.now(), gen_id]);
+  });
+  return json({ generation_id: gen_id, artifact_id: art_id }, 202);
+}
+
+async function listArtifacts(slug: string) {
+  const w = workspaceBySlug(slug);
+  if (!w) return err("workspace not found", 404);
+  const artifacts = db.query(
+    `SELECT a.id, a.name, a.slug, a.created_at,
+            (SELECT COUNT(*) FROM generations WHERE artifact_id = a.id) AS gen_count,
+            (SELECT artifact_path FROM generations
+              WHERE artifact_id = a.id AND status = 'done' AND artifact_path IS NOT NULL
+              ORDER BY completed_at DESC LIMIT 1) AS latest_artifact_path,
+            (SELECT artifact_version FROM generations
+              WHERE artifact_id = a.id AND status = 'done' AND artifact_path IS NOT NULL
+              ORDER BY completed_at DESC LIMIT 1) AS latest_version
+     FROM artifacts a WHERE a.workspace_id = ? ORDER BY a.id ASC`
+  ).all(w.id);
+  return json({ artifacts });
+}
+
+async function createArtifact(slug: string, req: Request) {
+  const w = workspaceBySlug(slug);
+  if (!w) return err("workspace not found", 404);
+  const { name } = await req.json() as { name: string };
+  if (!name || !name.trim()) return err("name required");
+  // Derive a unique slug within this workspace.
+  let base = slugify(name.trim());
+  if (!base) base = "artifact";
+  let candidate = base;
+  let n = 2;
+  while (db.query("SELECT 1 FROM artifacts WHERE workspace_id = ? AND slug = ?").get(w.id, candidate)) {
+    candidate = `${base}-${n++}`;
+  }
+  const ins = db.run(
+    "INSERT INTO artifacts(workspace_id, name, slug, created_at) VALUES(?, ?, ?, ?)",
+    [w.id, name.trim(), candidate, Date.now()]) as any;
+  return json({
+    artifact: db.query("SELECT * FROM artifacts WHERE id = ?").get(Number(ins.lastInsertRowid)),
+  }, 201);
+}
+
+async function renameArtifact(slug: string, art_id: string, req: Request) {
+  const w = workspaceBySlug(slug);
+  if (!w) return err("workspace not found", 404);
+  const { name } = await req.json() as { name: string };
+  if (!name || !name.trim()) return err("name required");
+  const a = db.query("SELECT * FROM artifacts WHERE id = ? AND workspace_id = ?").get(art_id, w.id) as any;
+  if (!a) return err("artifact not found", 404);
+  db.run("UPDATE artifacts SET name = ? WHERE id = ?", [name.trim(), a.id]);
+  return json({ artifact: db.query("SELECT * FROM artifacts WHERE id = ?").get(a.id) });
+}
+
+async function deleteArtifact(slug: string, art_id: string) {
+  const w = workspaceBySlug(slug);
+  if (!w) return err("workspace not found", 404);
+  const a = db.query("SELECT * FROM artifacts WHERE id = ? AND workspace_id = ?").get(art_id, w.id) as any;
+  if (!a) return err("artifact not found", 404);
+  db.run("DELETE FROM artifacts WHERE id = ?", [a.id]);
+  // Generations are NOT cascade-deleted (the FK in db.ts on artifacts
+  // table doesn't reach into generations). Sever the link instead so
+  // the chat history is preserved but orphaned of an artifact.
+  db.run("UPDATE generations SET artifact_id = NULL WHERE artifact_id = ?", [a.id]);
+  return json({ ok: true });
+}
+
+async function getGeneration(gen_id: string) {
+  const g = db.query("SELECT * FROM generations WHERE id = ?").get(gen_id) as any;
+  if (!g) return err("not found", 404);
+  const messages = db.query("SELECT * FROM messages WHERE generation_id = ? ORDER BY ts").all(g.id);
+  const validations = db.query(
+    "SELECT * FROM validations WHERE generation_id = ? ORDER BY iteration, ran_at").all(g.id);
+  return json({ generation: g, messages, validations });
+}
+
+async function replyToAgent(gen_id: string, req: Request) {
+  const { content } = await req.json() as { content: string };
+  if (!content || !content.trim()) return err("content required");
+  const g = db.query("SELECT * FROM generations WHERE id = ?").get(gen_id) as any;
+  if (!g) return err("generation not found", 404);
+  db.run(`INSERT INTO messages(generation_id, role, content, ts) VALUES(?, 'user', ?, ?)`,
+         [g.id, content.trim(), Date.now()]);
+  // If the generation was paused waiting for input, resume.
+  if (g.status === "awaiting_user") {
+    postUserReply(g.id, content.trim()).catch((e) => {
+      console.error("[reply]", gen_id, e);
+      db.run("UPDATE generations SET status='errored', error=?, completed_at=? WHERE id=?",
+             [String(e?.message || e), Date.now(), g.id]);
+    });
+  }
+  return json({ ok: true });
+}
+
+async function steerAgent(gen_id: string, req: Request) {
+  const { content } = await req.json() as { content: string };
+  if (!content || !content.trim()) return err("content required");
+  const g = db.query("SELECT * FROM generations WHERE id = ?").get(gen_id) as any;
+  if (!g) return err("generation not found", 404);
+  if (g.status !== "running" && g.status !== "queued") {
+    return err(`cannot steer a generation in status '${g.status}'`);
+  }
+  db.run(`INSERT INTO messages(generation_id, role, content, ts) VALUES(?, 'user', ?, ?)`,
+         [g.id, content.trim(), Date.now()]);
+  postSteer(g.id, content.trim()).catch((e) => console.error("[steer]", gen_id, e));
+  return json({ ok: true });
+}
+
+// ─── Comments ────────────────────────────────────────────────
+// Per-artifact slide-level comments. Open comments are surfaced into
+// the agent's trigger message on the next generation; the agent makes
+// targeted edits and the user marks them resolved.
+async function listComments(artifact_id: string) {
+  const rows = db.query(
+    `SELECT id, artifact_id, slide_index, body, status, created_at,
+            resolved_at, resolved_by_gen_id
+     FROM comments
+     WHERE artifact_id = ?
+     ORDER BY (status = 'resolved'), slide_index IS NULL, slide_index, created_at`,
+  ).all(artifact_id);
+  return json({ comments: rows });
+}
+async function addComment(artifact_id: string, req: Request) {
+  const a = db.query("SELECT * FROM artifacts WHERE id = ?").get(artifact_id) as any;
+  if (!a) return err("artifact not found", 404);
+  const body = await req.json() as { slide_index?: number | null; body?: string };
+  if (!body.body || !body.body.trim()) return err("body required", 400);
+  const slideIdx = (typeof body.slide_index === "number" && body.slide_index >= 0)
+    ? body.slide_index : null;
+  const ins = db.run(
+    `INSERT INTO comments (artifact_id, slide_index, body, status, created_at)
+     VALUES (?, ?, ?, 'open', ?)`,
+    [a.id, slideIdx, body.body.trim(), Date.now()],
+  );
+  const row = db.query("SELECT * FROM comments WHERE id = ?").get(Number(ins.lastInsertRowid));
+  return json({ comment: row }, 201);
+}
+async function updateComment(comment_id: string, req: Request) {
+  const c = db.query("SELECT * FROM comments WHERE id = ?").get(comment_id) as any;
+  if (!c) return err("comment not found", 404);
+  const body = await req.json() as { status?: string; body?: string };
+  const sets: string[] = [];
+  const vals: any[] = [];
+  if (body.status === "open" || body.status === "resolved") {
+    sets.push("status = ?"); vals.push(body.status);
+    if (body.status === "resolved") {
+      sets.push("resolved_at = ?"); vals.push(Date.now());
+    } else {
+      sets.push("resolved_at = NULL");
+    }
+  }
+  if (body.body && body.body.trim()) {
+    sets.push("body = ?"); vals.push(body.body.trim());
+  }
+  if (!sets.length) return json({ comment: c });
+  vals.push(c.id);
+  db.run(`UPDATE comments SET ${sets.join(", ")} WHERE id = ?`, vals);
+  return json({ comment: db.query("SELECT * FROM comments WHERE id = ?").get(c.id) });
+}
+async function deleteComment(comment_id: string) {
+  db.run("DELETE FROM comments WHERE id = ?", [comment_id]);
+  return json({ ok: true });
+}
+
+async function downloadArtifact(gen_id: string) {
+  const g = db.query("SELECT * FROM generations WHERE id = ?").get(gen_id) as any;
+  if (!g || !g.artifact_path || !existsSync(g.artifact_path)) return err("no artifact", 404);
+  const name = g.artifact_path.split("/").pop()!;
+  const ext = name.split(".").pop()?.toLowerCase() || "";
+  const friendly = exportFilename(g.artifact_path, ext);
+  const mime = ext === "html" ? "text/html; charset=utf-8"
+             : ext === "pdf"  ? "application/pdf"
+             : ext === "md"   ? "text/markdown; charset=utf-8"
+             : "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+  return new Response(Bun.file(g.artifact_path), {
+    headers: {
+      "content-type": mime,
+      "content-disposition": `attachment; filename="${friendly}"`,
+    },
+  });
+}
+
+// Prefer the lightweight chrome-headless-shell binary installed by
+// puppeteer; fall back to full Chrome.app if it's not present.
+const CHROME_HEADLESS_SHELL = (() => {
+  const base = `${process.env.HOME}/.cache/puppeteer/chrome-headless-shell`;
+  if (!existsSync(base)) return null;
+  // Pick the highest-numbered mac_arm dir.
+  try {
+    const fs = require("node:fs");
+    const dirs = fs.readdirSync(base).filter((n: string) => n.startsWith("mac_"));
+    dirs.sort();
+    const dir = dirs[dirs.length - 1];
+    if (!dir) return null;
+    const bin = `${base}/${dir}/chrome-headless-shell-mac-arm64/chrome-headless-shell`;
+    return existsSync(bin) ? bin : null;
+  } catch { return null; }
+})();
+const CHROME_APP = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const CHROME_BIN = CHROME_HEADLESS_SHELL || CHROME_APP;
+
+// Export the HTML deck behind a generation to a PDF using Chrome
+// headless. The deck-shell.js has a built-in @media print stylesheet
+// that lays every slide out as its own page at authored 1920×1080
+// size, so Chrome's --print-to-pdf gets the right pagination for
+// free. Output sits next to the .html as <base>.pdf.
+// DOM-walking HTML → PPTX export. Sidecars out to the python script
+// at ~/html-engine/exporters/export_pptx.py — that script uses
+// playwright to walk the DOM at authored 1920×1080 and emits one
+// editable pptx shape per leaf element (text box, picture, rect).
+const HTML_PPTX_EXPORT       = join(import.meta.dir, "..", "html-engine", "exporters", "export_pptx.py");
+const HTML_PPTX_IMAGE_EXPORT = join(import.meta.dir, "..", "html-engine", "exporters", "export_pptx_image.py");
+
+// Kill an active generation on user request. If the in-memory loop is
+// gone (server restarted under it), mark the row directly so the UI
+// unsticks either way.
+async function stopGen(gen_id: string) {
+  const g = db.query("SELECT * FROM generations WHERE id = ?").get(gen_id) as any;
+  if (!g) return err("generation not found", 404);
+  if (!["queued", "running", "validating", "awaiting_user"].includes(g.status)) {
+    return err("generation is not active", 400);
+  }
+  const inMemory = stopGeneration(Number(gen_id));
+  if (!inMemory) {
+    db.run("UPDATE generations SET status = 'errored', error = 'stopped by user', completed_at = ? WHERE id = ?",
+           [Date.now(), gen_id]);
+  }
+  return json({ ok: true, in_memory: inMemory });
+}
+
+async function exportPptxFromHtml(gen_id: string, mode: "dom" | "image" = "dom") {
+  const g = db.query("SELECT * FROM generations WHERE id = ?").get(gen_id) as any;
+  if (!g || !g.artifact_path) return err("no artifact", 404);
+  if (!/\.html$/i.test(g.artifact_path)) return err("export-pptx requires an HTML artifact", 400);
+  if (!existsSync(g.artifact_path)) return err("artifact file missing on disk", 404);
+  const script = mode === "image" ? HTML_PPTX_IMAGE_EXPORT : HTML_PPTX_EXPORT;
+  if (!existsSync(script)) return err(`html-engine ${mode} exporter not found`, 500);
+  const m = String(g.artifact_path).match(/\/workspaces\/(.+)$/);
+  if (!m) return err("could not derive preview path", 500);
+  const previewUrl = `http://127.0.0.1:${PORT}/preview/${m[1]}`;
+  // image mode lands in a separate .image.pptx so it doesn't clobber
+  // the editable export. dom mode uses the canonical <base>.pptx.
+  const suffix = mode === "image" ? ".image.pptx" : ".pptx";
+  const outPath = g.artifact_path.replace(/\.html$/i, suffix);
+  const proc = Bun.spawn({
+    cmd: ["python3", script, "--url", previewUrl, "--out", outPath],
+    stderr: "pipe", stdout: "pipe",
+  });
+  const exitCode = await proc.exited;
+  if (exitCode !== 0 || !existsSync(outPath)) {
+    const stderr = proc.stderr ? await new Response(proc.stderr).text() : "";
+    return err(`pptx ${mode} export failed (exit ${exitCode}): ${stderr.slice(-500)}`, 500);
+  }
+  return json({ ok: true, path: outPath, mode });
+}
+
+// Build a friendly download filename like
+// "dit-theme-migration-untitled-deck-v22.pptx" so saved files identify
+// which workspace and artifact they belong to. Strips the "untitled"
+// artifact slug since it's the default and noise.
+function exportFilename(artifact_path: string, kind: string): string {
+  const m = artifact_path.match(/\/workspaces\/([^/]+)\/artifacts\/([^/]+)\/([^/]+)$/);
+  const base = artifact_path.split("/").pop()!;
+  if (!m) return base;
+  const [, wsSlug, artSlug, file] = m;
+  const stem = file.replace(/\.[^/.]+$/, "");
+  const fileBase = artSlug && artSlug !== "untitled" ? `${wsSlug}-${artSlug}-${stem}` : `${wsSlug}-${stem}`;
+  return `${fileBase}.${kind === "pptx-image" ? "image.pptx" : kind}`;
+}
+
+// Serve an exported PDF/PPTX sibling of the gen's html artifact —
+// `<base>.pdf` / `<base>.pptx` next to the .html file.
+async function downloadExport(gen_id: string, kind: "pdf" | "pptx" | "pptx-image") {
+  const g = db.query("SELECT * FROM generations WHERE id = ?").get(gen_id) as any;
+  if (!g || !g.artifact_path) return err("no artifact", 404);
+  const ext = kind === "pptx-image" ? ".image.pptx" : `.${kind}`;
+  const out = g.artifact_path.replace(/\.html$/i, ext);
+  if (!existsSync(out)) return err(`no exported ${kind}`, 404);
+  const friendly = exportFilename(out, kind);
+  const mime = kind === "pdf"
+    ? "application/pdf"
+    : "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+  return new Response(Bun.file(out), {
+    headers: {
+      "content-type": mime,
+      "content-disposition": `attachment; filename="${friendly}"`,
+    },
+  });
+}
+
+// Save inline text edits made via the deck-preview iframe. The iframe
+// posts back the full deck HTML; we write it to the next deck-vN.html
+// path and create a new generation row pointing at it so the UI can
+// jump to the new version. Old version stays on disk so edits are
+// reversible.
+async function saveEdits(gen_id: string, req: Request) {
+  const g = db.query("SELECT * FROM generations WHERE id = ?").get(gen_id) as any;
+  if (!g || !g.artifact_path) return err("no artifact", 404);
+  if (!/\.html$/i.test(g.artifact_path)) return err("only HTML artifacts can be edited", 400);
+  const body = await req.json() as { html?: string };
+  if (!body.html || typeof body.html !== "string") return err("html body required", 400);
+  // Resolve next version path. Pattern: ".../deck-vN.html" → "deck-v(N+1).html".
+  const m = g.artifact_path.match(/^(.+\/deck-v)(\d+)(\.html)$/i);
+  if (!m) return err("artifact_path does not follow deck-vN.html convention", 400);
+  let nextV = parseInt(m[2], 10) + 1;
+  let newPath = `${m[1]}${nextV}${m[3]}`;
+  // Avoid overwriting if a future-version file already exists (e.g. agent
+  // ran in the background while user was editing). Bump until free.
+  while (existsSync(newPath)) {
+    nextV += 1;
+    newPath = `${m[1]}${nextV}${m[3]}`;
+  }
+  writeFileSync(newPath, body.html);
+  const now = Date.now();
+  const ins = db.run(
+    `INSERT INTO generations
+       (workspace_id, artifact_id, prompt, status, phase, started_at, completed_at,
+        artifact_path, artifact_version, validator_verdict, validator_iteration)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [g.workspace_id, g.artifact_id, "[edit] manual text edits", "done", "done",
+     now, now, newPath, nextV, null, 0],
+  );
+  return json({
+    ok: true,
+    new_gen_id: Number(ins.lastInsertRowid),
+    artifact_path: newPath,
+    version: nextV,
+  });
+}
+
+async function exportPdf(gen_id: string) {
+  const g = db.query("SELECT * FROM generations WHERE id = ?").get(gen_id) as any;
+  if (!g || !g.artifact_path) return err("no artifact", 404);
+  if (!/\.html$/i.test(g.artifact_path)) return err("export-pdf requires an HTML artifact", 400);
+  if (!existsSync(g.artifact_path)) return err("artifact file missing on disk", 404);
+  if (!existsSync(CHROME_BIN)) return err("Chrome not found at expected path", 500);
+
+  const m = String(g.artifact_path).match(/\/workspaces\/(.+)$/);
+  if (!m) return err("could not derive preview path", 500);
+  const previewUrl = `http://127.0.0.1:${PORT}/preview/${m[1]}`;
+  const outPath = g.artifact_path.replace(/\.html$/i, ".pdf");
+
+  // chrome-headless-shell is intrinsically headless; the full Chrome
+  // app needs --headless=new. Decide based on which one we resolved.
+  // Use Bun.spawn (async) so the server can keep serving other
+  // requests during the ~15s chrome takes to print.
+  const usingShell = CHROME_BIN === CHROME_HEADLESS_SHELL;
+  const proc = Bun.spawn({
+    cmd: [
+      CHROME_BIN,
+      ...(usingShell ? [] : ["--headless=new"]),
+      "--no-sandbox",
+      "--disable-gpu",
+      "--no-pdf-header-footer",
+      "--virtual-time-budget=15000",
+      `--print-to-pdf=${outPath}`,
+      previewUrl,
+    ],
+    stderr: "pipe", stdout: "pipe",
+  });
+  const exitCode = await proc.exited;
+  if (exitCode !== 0 || !existsSync(outPath)) {
+    const stderr = proc.stderr ? await new Response(proc.stderr).text() : "";
+    return err(`chrome print-to-pdf failed (exit ${exitCode}): ${stderr.slice(-500)}`, 500);
+  }
+  return json({ ok: true, path: outPath });
+}
+
+// Download a theme variant — same generation, alternate theme file.
+// Variant path is `<base>-<theme>.pptx` next to the original.
+// (md-engine retheme removed — openpod is html-engine only)
+
+// Scan the artifacts directory next to a base artifact and find sibling
+
+// ─── router ─────────────────────────────────────────────────────────
+
+function route(req: Request, url: URL): Promise<Response> | Response {
+  const path = url.pathname;
+  const m = (p: string) => path.match(new RegExp("^" + p + "$"));
+
+  if (path === "/api/workspaces" && req.method === "GET") return listWorkspaces();
+  if (path === "/api/workspaces" && req.method === "POST") return createWorkspace(req);
+  let mt: RegExpMatchArray | null;
+  if ((mt = m("/api/workspaces/([^/]+)")) && req.method === "GET") return getWorkspace(mt[1]);
+  if ((mt = m("/api/workspaces/([^/]+)")) && req.method === "DELETE") return deleteWorkspace(mt[1]);
+  if ((mt = m("/api/workspaces/([^/]+)")) && req.method === "PATCH") return updateWorkspace(mt[1], req);
+  if ((mt = m("/api/workspaces/([^/]+)/files")) && req.method === "POST") return uploadFiles(mt[1], req);
+  if ((mt = m("/api/workspaces/([^/]+)/files/(\\d+)")) && req.method === "DELETE") return deleteFile(mt[1], mt[2]);
+  if ((mt = m("/api/workspaces/([^/]+)/notes")) && req.method === "POST") return quickNote(mt[1], req);
+  if ((mt = m("/api/workspaces/([^/]+)/generate")) && req.method === "POST") return kickoffGeneration(mt[1], req);
+  if ((mt = m("/api/workspaces/([^/]+)/artifacts")) && req.method === "GET") return listArtifacts(mt[1]);
+  if ((mt = m("/api/workspaces/([^/]+)/artifacts")) && req.method === "POST") return createArtifact(mt[1], req);
+  if ((mt = m("/api/workspaces/([^/]+)/artifacts/(\\d+)")) && req.method === "PATCH") return renameArtifact(mt[1], mt[2], req);
+  if ((mt = m("/api/workspaces/([^/]+)/artifacts/(\\d+)")) && req.method === "DELETE") return deleteArtifact(mt[1], mt[2]);
+  if ((mt = m("/api/generations/(\\d+)")) && req.method === "GET") return getGeneration(mt[1]);
+  if ((mt = m("/api/generations/(\\d+)/reply")) && req.method === "POST") return replyToAgent(mt[1], req);
+  if ((mt = m("/api/generations/(\\d+)/steer")) && req.method === "POST") return steerAgent(mt[1], req);
+  if ((mt = m("/api/artifacts/(\\d+)/comments")) && req.method === "GET")  return listComments(mt[1]);
+  if ((mt = m("/api/artifacts/(\\d+)/comments")) && req.method === "POST") return addComment(mt[1], req);
+  if ((mt = m("/api/comments/(\\d+)")) && req.method === "PATCH")  return updateComment(mt[1], req);
+  if ((mt = m("/api/comments/(\\d+)")) && req.method === "DELETE") return deleteComment(mt[1]);
+  if ((mt = m("/api/generations/(\\d+)/save-edits")) && req.method === "POST") return saveEdits(mt[1], req);
+  if ((mt = m("/api/generations/(\\d+)/export-pdf")) && req.method === "POST") return exportPdf(mt[1]);
+  if (url.pathname === "/api/agents" && req.method === "GET") {
+    return (async () => {
+      const out = [];
+      for (const a of ADAPTERS) out.push({ id: a.id, label: a.label, models: a.models, ...(await a.available()) });
+      return json({ agents: out, default: DEFAULT_ENGINE });
+    })();
+  }
+  if ((mt = m("/api/generations/(\\d+)/stop")) && req.method === "POST") return stopGen(mt[1]);
+  if ((mt = m("/api/generations/(\\d+)/export-pptx")) && req.method === "POST") return exportPptxFromHtml(mt[1], "dom");
+  if ((mt = m("/api/generations/(\\d+)/export-pptx-image")) && req.method === "POST") return exportPptxFromHtml(mt[1], "image");
+  if ((mt = m("/api/generations/(\\d+)/download-pdf")) && req.method === "GET") return downloadExport(mt[1], "pdf");
+  if ((mt = m("/api/generations/(\\d+)/download-pptx")) && req.method === "GET") return downloadExport(mt[1], "pptx");
+  if ((mt = m("/api/generations/(\\d+)/download-pptx-image")) && req.method === "GET") return downloadExport(mt[1], "pptx-image");
+  if ((mt = m("/api/artifacts/(\\d+)")) && req.method === "GET") return downloadArtifact(mt[1]);
+  if ((mt = m("/api/files/(\\d+)")) && req.method === "GET") return downloadFile(mt[1]);
+  if (path === "/api/design-systems" && req.method === "GET")  return listDesignSystems();
+  if (path === "/api/design-systems" && req.method === "POST") return createDesignSystem(req);
+  if ((mt = m("/api/design-systems/(\\d+)")) && req.method === "GET")    return getDesignSystem(mt[1]);
+  if ((mt = m("/api/design-systems/(\\d+)")) && req.method === "PATCH")  return updateDesignSystem(mt[1], req);
+  if ((mt = m("/api/design-systems/(\\d+)")) && req.method === "DELETE") return deleteDesignSystem(mt[1]);
+  if ((mt = m("/api/design-systems/(\\d+)/css\\.css")) && req.method === "GET") return designSystemCss(mt[1]);
+
+  return err("not found", 404);
+}
+
+// ─── server ─────────────────────────────────────────────────────────
+
+Bun.serve({
+  port: PORT,
+  async fetch(req) {
+    const url = new URL(req.url);
+    if (url.pathname.startsWith("/api/")) {
+      try {
+        return await route(req, url);
+      } catch (e: any) {
+        console.error(e);
+        return err(e?.message || String(e), 500);
+      }
+    }
+    // /html-engine/* serves the deck shell + themes (read-only).
+    if (url.pathname.startsWith("/html-engine/")) {
+      const rel = url.pathname.replace(/^\/html-engine\//, "");
+      const t = join(import.meta.dir, "..", "html-engine", rel);
+      if (!t.startsWith(join(import.meta.dir, "..", "html-engine"))) {
+        return new Response("forbidden", { status: 403 });
+      }
+      if (existsSync(t)) return new Response(Bun.file(t), {
+        headers: { "cache-control": "no-cache" },
+      });
+      return new Response("not found", { status: 404 });
+    }
+    // Synthetic preview route for a design system: returns the example
+    // deck wired to the system's live CSS so the editor can show
+    // changes immediately.
+    const dsPreview = url.pathname.match(/^\/preview\/__design-system-preview\/(\d+)\.html$/);
+    if (dsPreview) {
+      const id = dsPreview[1];
+      // showcase.html is a richer regression suite — typography hierarchy,
+      // color swatches, every slide pattern, component examples — so the
+      // editor preview surfaces what the system actually covers, not
+      // just a 3-slide sample.
+      const showcasePath = join(import.meta.dir, "..", "html-engine", "examples", "sample.html");
+      const fallback     = join(import.meta.dir, "..", "html-engine", "examples", "sample.html");
+      const sourcePath = existsSync(showcasePath) ? showcasePath : fallback;
+      if (!existsSync(sourcePath)) {
+        return new Response("showcase / sample not found", { status: 404 });
+      }
+      const sample = readFileSync(sourcePath, "utf-8");
+      // Swap the static themes/<x>.css link for the live design system CSS.
+      const patched = sample.replace(
+        /<link\s+rel="stylesheet"\s+href="\/html-engine\/themes\/[^"]+"\s*\/?>/i,
+        `<link rel="stylesheet" href="/api/design-systems/${id}/css.css">`,
+      );
+      return new Response(patched, {
+        headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" },
+      });
+    }
+    // /preview/<workspace_slug>/<artifact_slug>/<file> serves the
+    // live HTML deck preview from the workspace artifacts directory.
+    if (url.pathname.startsWith("/preview/")) {
+      const rel = url.pathname.replace(/^\/preview\//, "");
+      const t = join(WORKSPACE_ROOT, rel);
+      if (!t.startsWith(WORKSPACE_ROOT)) {
+        return new Response("forbidden", { status: 403 });
+      }
+      if (!existsSync(t)) return new Response("not found", { status: 404 });
+      // For HTML artifacts we rewrite the embedded design-system CSS
+      // link to point at the workspace's CURRENT design_system_id.
+      // The link is baked into the file at generation time, but the
+      // user can change the workspace's design system any time after
+      // — we want that change to take effect immediately for previews
+      // and downstream exports (PDF / PPTX both render via this URL).
+      if (rel.endsWith(".html")) {
+        const wsSlug = rel.split("/")[0];
+        const ws = db.query("SELECT design_system_id FROM workspaces WHERE slug = ?").get(wsSlug) as any;
+        if (ws && ws.design_system_id) {
+          const html = readFileSync(t, "utf-8");
+          const patched = html.replace(
+            /<link\s+rel="stylesheet"\s+href="\/api\/design-systems\/\d+\/css\.css"\s*\/?>/i,
+            `<link rel="stylesheet" href="/api/design-systems/${ws.design_system_id}/css.css">`,
+          );
+          return new Response(patched, {
+            headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" },
+          });
+        }
+      }
+      return new Response(Bun.file(t), {
+        headers: { "cache-control": "no-cache" },
+      });
+    }
+    // Static files from public/
+    const file = url.pathname === "/" ? "index.html" : url.pathname.replace(/^\//, "");
+    const target = join(import.meta.dir, "..", "public", file);
+    if (existsSync(target)) {
+      return new Response(Bun.file(target));
+    }
+    // SPA fallback
+    return new Response(Bun.file(join(import.meta.dir, "..", "public", "index.html")));
+  },
+});
+
+const reaped = reapStrandedGenerations();
+if (reaped > 0) console.log(`[openpod] reaped ${reaped} stranded generation${reaped === 1 ? "" : "s"} from previous run`);
+console.log(`[openpod] http://localhost:${PORT}`);

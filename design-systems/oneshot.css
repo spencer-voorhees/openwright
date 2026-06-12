@@ -1,0 +1,568 @@
+/* v1 — Oneshot
+ * Built to survive the trip to editable PowerPoint in one shot.
+ * Every visual choice here maps 1:1 onto a native PPTX primitive, so
+ * the DOM-walking exporter reproduces the deck losslessly: solid
+ * fills, uniform hairline borders, single-radius rounding, real text
+ * on solid backgrounds. Visually it stays in the house register —
+ * quiet Apple-adjacent minimalism, ink on paper, one blue accent.
+ *
+ * The contract (do NOT break these in deck CSS when this system is
+ * active — they are what makes the export lossless):
+ *   - fonts:   "Helvetica Neue" / Menlo ONLY. Both exist in the
+ *              browser, Keynote, and PowerPoint, so measurement and
+ *              rendering agree to the pixel. No -apple-system, no
+ *              webfonts, no SF-internal names.
+ *   - color:   solid hex only. No gradients, no pattern/hatch fills,
+ *              no rgba washes (tints are precomputed opaque hex).
+ *   - effects: no box-shadow, no backdrop-filter, no blend modes,
+ *              no filters, no text-shadow.
+ *   - layout:  no CSS transforms, no writing-mode/vertical text, no
+ *              display:contents, no overflow:hidden clipping tricks.
+ *              Accent bars are inset block elements, never
+ *              edge-hugging pseudo strips that need clipping.
+ *   - radius:  uniform per element (border-radius: Npx, never
+ *              per-corner mixes).
+ *   - text:    line-height >= 1.1 everywhere, including display
+ *              sizes. Tight leading magnifies baseline drift.
+ *   - decor:   pseudo-elements limited to list markers (handled
+ *              natively by the exporter). Icons via lucide are fine
+ *              (exported as crisp images).
+ */
+
+:root {
+  --system-name:      "Oneshot";
+
+  --font-display:     "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-sans:        "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono:        Menlo, Consolas, "Courier New", monospace;
+
+  /* Neutrals — ink to paper. All opaque. */
+  --black:    #0A0A0A;
+  --ink:      #1D1D1F;
+  --graphite: #2C2C2E;
+  --slate:    #3A3A3C;
+  --stone:    #6E6E73;
+  --silver:   #86868B;
+  --fog:      #AEAEB2;
+  --mist:     #D2D2D7;
+  --bone:     #E8E8ED;
+  --paper:    #F5F5F7;
+  --white:    #FFFFFF;
+
+  /* Accent — one blue, used as punctuation. Tints are PRE-BLENDED
+     opaque hex (accent over white), not rgba, so exported fills are
+     exact without compositing. */
+  --accent:        #0071E3;
+  --accent-deep:   #0058B8;
+  --accent-soft:   #2997FF;
+  --accent-tint:   #EBF3FD;   /* = accent 8% over white */
+  --accent-wash:   #F5F9FE;   /* = accent 4% over white */
+
+  --st-available:  #1A8A3C;
+  --st-gated:      #C97F00;
+  --st-parked:     #6E6E73;
+  --negative:      #D93025;
+  --negative-tint: #FCEDEB;
+  --positive-tint: #EAF5EE;
+  --warn-tint:     #FBF3E6;
+
+  /* Hairlines — opaque grays, not rgba, so borders export as exact
+     solid strokes. */
+  --border:        #E3E4E8;
+  --border-strong: #CFD1D7;
+
+  /* One radius for cards, one for chips. Never mixed per-corner. */
+  --r-xs: 6px;
+  --r-sm: 10px;
+  --r-md: 14px;
+  --r-lg: 16px;
+  --r-xl: 16px;
+
+  /* Flat by contract. */
+  --shadow-sm: none;
+  --shadow-md: none;
+  --shadow-lg: none;
+
+  --ease-out:  cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-soft: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-fast:  220ms;
+  --dur:       380ms;
+  --dur-slow:  680ms;
+
+  /* Type scale — authored at 1920x1080. Display leading stays >= 1.1
+     by contract (baseline fidelity in export). */
+  --type-display: 124px;
+  --type-title:   78px;
+  --type-h2:      54px;
+  --type-h3:      36px;
+  --type-body:    26px;
+  --type-small:   18px;
+  --type-mono:    20px;
+  --type-eyebrow: 16px;
+
+  --tracking-display: -0.02em;
+  --tracking-title:   -0.015em;
+  --tracking-h2:      -0.01em;
+  --tracking-eyebrow: 0.12em;
+
+  --bg:       var(--white);
+  --bg-soft:  var(--paper);
+  --bg-deep:  var(--bone);
+  --fg:       var(--ink);
+  --fg-muted: var(--stone);
+  --fg-soft:  var(--silver);
+}
+
+/* ─── slide foundation ────────────────────────────────────────── */
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-feature-settings: "kern", "liga", "tnum";
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Flat solid ground. No gradient air — flatness IS the aesthetic
+   here, and it exports as a single exact background rect. */
+deck-stage section {
+  position: relative;
+  background: var(--bg);
+}
+
+/* ─── typography ──────────────────────────────────────────────── */
+
+h1 {
+  font-family: var(--font-display);
+  font-size: var(--type-title);
+  font-weight: 700;
+  letter-spacing: var(--tracking-title);
+  line-height: 1.1;
+  margin: 0;
+  color: var(--fg);
+}
+h2 {
+  font-family: var(--font-display);
+  font-size: var(--type-h2);
+  font-weight: 700;
+  letter-spacing: var(--tracking-h2);
+  line-height: 1.12;
+  margin: 0;
+  color: var(--fg);
+}
+h3 {
+  font-family: var(--font-display);
+  font-size: var(--type-h3);
+  font-weight: 600;
+  line-height: 1.18;
+  margin: 0;
+  color: var(--fg);
+}
+p, li {
+  font-size: var(--type-body);
+  line-height: 1.5;
+  color: var(--fg-muted);
+  margin: 0;
+}
+strong { color: var(--fg); font-weight: 600; }
+em { font-style: italic; }
+
+.display {
+  font-family: var(--font-display);
+  font-size: var(--type-display);
+  font-weight: 700;
+  letter-spacing: var(--tracking-display);
+  line-height: 1.1;          /* >= 1.1 by contract, even for numerals */
+  color: var(--fg);
+}
+.display .em { color: var(--accent); }
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--type-eyebrow);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-eyebrow);
+  color: var(--accent);
+}
+.lede {
+  font-size: var(--type-h3);
+  line-height: 1.4;
+  color: var(--fg-muted);
+  font-weight: 400;
+  max-width: 1500px;
+}
+.lede strong { color: var(--fg); font-weight: 600; }
+.mono  { font-family: var(--font-mono); font-size: var(--type-mono); color: var(--fg-muted); }
+.small { font-size: var(--type-small); line-height: 1.45; }
+.label {
+  font-size: var(--type-small);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--fg-soft);
+}
+
+/* Accent rule — a real inline block element, not a pseudo, so it
+   exports as one exact rect. */
+.accent-rule {
+  width: 56px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+/* ─── cards ───────────────────────────────────────────────────── */
+
+.card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.card.soft     { background: var(--bg-soft); border-color: var(--border); }
+.card.tint     { background: var(--accent-wash); border-color: var(--border); }
+.card.rec      { border: 2px solid var(--accent); background: var(--bg); }
+.card.negative { background: var(--negative-tint); border-color: var(--border); }
+.card.positive { background: var(--positive-tint); border-color: var(--border); }
+.card.compact  { padding: 24px; gap: 10px; }
+.card .kicker {
+  font-family: var(--font-mono);
+  font-size: var(--type-small);
+  color: var(--accent);
+  letter-spacing: 0.04em;
+}
+.card h3 { margin: 0; }
+.card p  { font-size: var(--type-small); line-height: 1.5; }
+
+/* Accent bar INSIDE a card: an inset block strip, never an
+   edge-hugging absolute pseudo. Fits the card because layout says so,
+   not because overflow clips it. */
+.card .bar {
+  width: 56px;
+  height: 5px;
+  border-radius: 2px;
+  background: var(--accent);
+  flex: 0 0 auto;
+}
+.card .bar.green { background: var(--st-available); }
+.card .bar.red   { background: var(--negative); }
+
+/* ─── pills / badges / dots ───────────────────────────────────── */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: var(--type-small);
+  font-weight: 600;
+  border: 1px solid var(--border-strong);
+  color: var(--fg-muted);
+  background: var(--bg);
+}
+.pill.accent    { color: var(--accent);       border-color: var(--accent);       background: var(--accent-tint); }
+.pill.available { color: var(--st-available); border-color: var(--st-available); background: var(--positive-tint); }
+.pill.gated     { color: var(--st-gated);     border-color: var(--st-gated);     background: var(--warn-tint); }
+.pill.parked    { color: var(--st-parked);    border-color: var(--border-strong); background: var(--bg-soft); }
+.pill.negative  { color: var(--negative);     border-color: var(--negative);     background: var(--negative-tint); }
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  background: var(--accent);
+  color: var(--white);
+}
+.badge.neutral { background: var(--bone); color: var(--fg-muted); }
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--accent);
+  flex: 0 0 10px;
+}
+.dot.available { background: var(--st-available); }
+.dot.gated     { background: var(--st-gated); }
+.dot.parked    { background: var(--st-parked); }
+.dot.negative  { background: var(--negative); }
+
+/* ─── lists ───────────────────────────────────────────────────── */
+
+ul.bullets {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+ul.bullets li {
+  position: relative;
+  padding-left: 36px;
+  font-size: var(--type-body);
+  line-height: 1.5;
+  color: var(--fg);
+}
+ul.bullets li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 16px;
+  width: 18px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+ol.numbered {
+  padding-left: 0;
+  list-style: none;
+  counter-reset: item;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+}
+ol.numbered li {
+  position: relative;
+  padding-left: 80px;
+  counter-increment: item;
+  font-size: var(--type-body);
+  line-height: 1.45;
+  color: var(--fg);
+}
+ol.numbered li::before {
+  content: counter(item, decimal-leading-zero);
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 0.06em;
+}
+
+/* ─── tables ──────────────────────────────────────────────────── */
+
+table.deck-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 0;          /* square = exact export, no clip needed */
+  font-size: var(--type-small);
+}
+table.deck-table th {
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--fg-soft);
+  padding: 16px 22px;
+  background: var(--bg-soft);
+  border-bottom: 1px solid var(--border-strong);
+}
+table.deck-table td {
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--border);
+  color: var(--fg-muted);
+  line-height: 1.45;
+  vertical-align: top;
+}
+table.deck-table tr:last-child td { border-bottom: none; }
+table.deck-table td:first-child { color: var(--fg); font-weight: 600; }
+
+/* ─── code / quotes ───────────────────────────────────────────── */
+
+pre.code {
+  font-family: var(--font-mono);
+  font-size: var(--type-mono);
+  line-height: 1.55;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 24px 28px;
+  color: var(--fg);
+  margin: 0;
+  white-space: pre-wrap;
+}
+code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  color: var(--accent-deep);
+}
+
+blockquote.quote {
+  margin: 0;
+  padding: 8px 0 8px 32px;
+  border-left: 4px solid var(--accent);
+  font-size: var(--type-h3);
+  line-height: 1.4;
+  color: var(--fg);
+  font-weight: 500;
+}
+blockquote.quote footer {
+  margin-top: 14px;
+  font-size: var(--type-small);
+  color: var(--fg-soft);
+  font-weight: 400;
+}
+
+/* ─── UI kit (editor preview / interactive artifacts) ─────────── */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 26px;
+  border-radius: var(--r-sm);
+  font-family: var(--font-sans);
+  font-size: var(--type-small);
+  font-weight: 600;
+  background: var(--accent);
+  color: var(--white);
+  border: 1px solid var(--accent);
+  cursor: pointer;
+}
+.btn.secondary { background: var(--bg); color: var(--accent); border-color: var(--accent); }
+.btn.quiet     { background: var(--bg-soft); color: var(--fg); border-color: var(--border-strong); }
+
+.input, .textarea {
+  font-family: var(--font-sans);
+  font-size: var(--type-small);
+  padding: 12px 16px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--bg);
+  color: var(--fg);
+}
+.textarea { resize: vertical; min-height: 88px; font-family: var(--font-mono); }
+.help { font-size: 14px; color: var(--fg-soft); }
+
+.checkbox, .radio {
+  width: 22px;
+  height: 22px;
+  border: 1.5px solid var(--border-strong);
+  background: var(--bg);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.checkbox { border-radius: 6px; }
+.radio    { border-radius: 999px; }
+.checkbox.on, .radio.on { background: var(--accent); border-color: var(--accent); }
+
+.switch {
+  width: 46px;
+  height: 26px;
+  border-radius: 999px;
+  background: var(--mist);
+  position: relative;
+}
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--white);
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+.switch.on { background: var(--st-available); }
+.switch.on::after { transform: translateX(20px); }
+
+.progress {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--bone);
+  position: relative;
+}
+.progress > .fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.alert {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 20px 24px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+  font-size: var(--type-small);
+  color: var(--fg-muted);
+}
+.alert.info     { background: var(--accent-wash);  border-color: var(--accent-soft); }
+.alert.warn     { background: var(--warn-tint);    border-color: var(--st-gated); }
+.alert.negative { background: var(--negative-tint); border-color: var(--negative); }
+
+.avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  background: var(--bone);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--fg-muted);
+  flex: 0 0 auto;
+}
+
+/* ─── icons ───────────────────────────────────────────────────── */
+
+[data-lucide], svg.lucide { stroke-width: 1.8; }
+.glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--r-md);
+  background: var(--accent-tint);
+  color: var(--accent);
+  flex: 0 0 auto;
+}
+.glyph [data-lucide], .glyph svg.lucide { width: 28px; height: 28px; }
+.glyph.solid { background: var(--accent); color: var(--white); }
+
+/* ─── entry motion (preview only — export forces end states) ──── */
+
+deck-stage section > * {
+  animation: rise var(--dur) var(--ease-out) both;
+}
+deck-stage section > *:nth-child(1) { animation-delay: 0ms; }
+deck-stage section > *:nth-child(2) { animation-delay: 60ms; }
+deck-stage section > *:nth-child(3) { animation-delay: 120ms; }
+deck-stage section > *:nth-child(4) { animation-delay: 180ms; }
+deck-stage section > *:nth-child(5) { animation-delay: 240ms; }
+@keyframes rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  deck-stage section > * { animation: none; }
+}

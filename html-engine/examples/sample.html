@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>html-engine sample</title>
+<link rel="stylesheet" href="/html-engine/themes/apple.css">
+<style>
+  /* Slide-level styles. Each <section> is a slide; deck-shell.js sizes
+     it to the authored 1920x1080 then scales to viewport. */
+  body { margin: 0; }
+  deck-stage:not(:defined) { visibility: hidden; }
+  deck-stage section {
+    padding: 80px 96px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 32px;
+  }
+  h1 { font-size: var(--type-title); font-weight: 700; letter-spacing: -0.02em; line-height: 1.05; margin: 0; }
+  h2 { font-size: var(--type-h2);    font-weight: 600; letter-spacing: -0.01em; line-height: 1.1; margin: 0; }
+  p  { font-size: var(--type-body);  line-height: 1.45; color: var(--fg-muted); margin: 0; max-width: 1500px; }
+  .eyebrow { font-size: var(--type-small); text-transform: uppercase; letter-spacing: 0.12em;
+             color: var(--accent); font-weight: 600; }
+  ul { font-size: var(--type-body); line-height: 1.5; color: var(--fg-muted);
+       padding-left: 1.2em; margin: 0; }
+  li { margin: 0.4em 0; }
+  li::marker { color: var(--accent); }
+  .accent-rule { width: 4px; height: 56px; background: var(--accent); }
+  .row { display: flex; gap: 24px; align-items: center; }
+
+  table { border-collapse: collapse; font-size: var(--type-small); }
+  th, td { padding: 14px 22px; border-bottom: 1px solid var(--border);
+           text-align: left; vertical-align: top; }
+  th { font-weight: 600; color: var(--fg); }
+  td { color: var(--fg-muted); }
+</style>
+</head>
+<body>
+<deck-stage width="1920" height="1080">
+
+<section>
+  <div class="row"><div class="accent-rule"></div>
+    <span class="eyebrow">html-engine sample</span></div>
+  <h1>The HTML deck engine</h1>
+  <p>Agent writes HTML/CSS. Workpod renders it live. Same source ships to PPTX and PDF without a translation step.</p>
+</section>
+
+<section>
+  <span class="eyebrow">Why it's better</span>
+  <h2>WYSIWYG instead of translation</h2>
+  <ul>
+    <li>Agent writes HTML/CSS; rendered output is the source of truth</li>
+    <li>No padding/font/overlap surprises from pandoc geometry</li>
+    <li>Themes are CSS variables — way more powerful than reference.pptx surgery</li>
+    <li>Editable PPTX via DOM-walking export: each visual is a real shape</li>
+  </ul>
+</section>
+
+<section>
+  <span class="eyebrow">Pipeline</span>
+  <h2>One source, three outputs</h2>
+  <table>
+    <thead>
+      <tr><th>Format</th><th>How</th><th>Editable?</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>HTML (live)</td><td>direct render in workpod iframe</td><td>—</td></tr>
+      <tr><td>PDF</td><td>chromium --print-to-pdf at 1920×1080</td><td>no</td></tr>
+      <tr><td>PPTX</td><td>playwright walks DOM → python-pptx primitives</td><td>yes</td></tr>
+    </tbody>
+  </table>
+</section>
+
+</deck-stage>
+<script src="/html-engine/deck-shell.js"></script>
+</body>
+</html>
