@@ -182,8 +182,13 @@ step "Done"
 [ "$HAVE_COPILOT" = "1" ] && ok "copilot installed (auth: 'copilot login')"
 [ "$HAVE_CODEX" = "1" ]   && ok "codex installed (auth: 'codex login status')"
 printf '\n'
-bold "  Start it:   bun start"
-note "http://localhost:8090 — the db and the Oneshot design system"
-note "seed themselves on first boot. Engine + model are picked per"
-note "workspace; defaults live in Settings (gear in the left rail)."
+if ask "Start openwright now?" y; then
+  "$HOME/.bun/bin/bun" "$(pwd)/bin/openwright.ts" start
+  "$HOME/.bun/bin/bun" "$(pwd)/bin/openwright.ts" open >/dev/null 2>&1 || true
+else
+  bold "  Start it:   openwright start"
+fi
+note "CLI: openwright start / stop / status / logs / open / update"
+note "If 'openwright' is not found in THIS terminal, run:"
+note "  export PATH=\"\$HOME/.bun/bin:\$PATH\"   (new terminals have it automatically)"
 printf '\n'

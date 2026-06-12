@@ -8,7 +8,10 @@
 # installers, python comes from uv, and the agent CLIs install through
 # bun's global shims (no node required).
 param([switch]$Yes)
-$ErrorActionPreference = "Stop"
+# NOT "Stop": Windows PowerShell 5.1 turns redirected native-command
+# stderr (bun, git, codex all log there) into terminating errors
+# under Stop, killing the script on harmless output.
+$ErrorActionPreference = "Continue"
 Set-Location $PSScriptRoot
 
 function Have($cmd) { return [bool](Get-Command $cmd -ErrorAction SilentlyContinue) }
@@ -56,7 +59,8 @@ else {
 
 Step "JS dependencies"
 bun install --silent
-bun link 2>$null | Out-Null
+if (-not (Have "bun")) { Write-Host "bun is required but missing - rerun setup"; exit 1 }
+cmd /c "bun link >/dev/null 2>&1"
 Ok "installed (+ openwright CLI on PATH)"
 
 # -- 2. python via uv ----------------------------------------------
