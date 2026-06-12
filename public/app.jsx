@@ -362,15 +362,17 @@ function icHash(str) {
   for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
   return h >>> 0;
 }
+// Deep jewel register tuned for the slate UI — rich but not candy,
+// and the orange pair stays in the ultra-accent family.
 const AV_GRADS = [
-  ["#409CFF", "#0A6BDD"],
-  ["#7D7AFF", "#5E5CE6"],
-  ["#DA8FFF", "#BF5AF2"],
-  ["#FF7A93", "#FF2D55"],
-  ["#FFB55C", "#FF9500"],
-  ["#43D95B", "#1F9A3F"],
-  ["#5DD6F5", "#0A9BD2"],
-  ["#A6A6AD", "#63636A"],
+  ["#2E8BFF", "#0A55BE"],   // blue
+  ["#6E6BF0", "#4644BE"],   // indigo
+  ["#AE5BE0", "#7A36A8"],   // purple
+  ["#E0506E", "#A8273F"],   // rose
+  ["#FF7A45", "#CC4412"],   // ultra orange
+  ["#34B85C", "#1B7038"],   // green
+  ["#3FB9D6", "#147294"],   // teal
+  ["#92929B", "#54545C"],   // graphite
 ];
 function initialsFor(nameOrSlug) {
   return String(nameOrSlug || "?").split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase() || "?";
