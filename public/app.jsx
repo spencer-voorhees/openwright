@@ -755,7 +755,9 @@ function PodCard({ ws, onOpen, onMenu }) {
         {extra > 0 && <div className="pod-more-files">+{extra} more</div>}
       </div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-        <StatusPill status={status} />
+        {/* Steady-state "Ready" is noise — the pill earns its place
+            only for exceptions: working, waiting on input, errored. */}
+        {status !== "done" && <StatusPill status={status} />}
         {ws.active_gen_id && (
           <Heartbeat
             startedAt={ws.active_gen_started_at}
