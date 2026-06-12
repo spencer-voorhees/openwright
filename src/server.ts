@@ -1,4 +1,4 @@
-// openpod HTTP server. Bun + bun:sqlite. Serves the React SPA from
+// openwright HTTP server. Bun + bun:sqlite. Serves the React SPA from
 // public/ and the REST API at /api/*.
 //
 // API surface (see README for details):
@@ -20,7 +20,7 @@ import { db, getSetting, setSetting } from "./db";
 import { startGeneration, postUserReply, postSteer, reapStrandedGenerations, stopGeneration, WORKSPACE_ROOT } from "./agent";
 import { ADAPTERS, DEFAULT_ENGINE } from "./agents/index";
 
-const PORT = Number(process.env.OPENPOD_PORT || process.env.PORT || 8090);
+const PORT = Number(process.env.OPENWRIGHT_PORT || process.env.PORT || 8090);
 
 // Model lists are probed from CLIs/APIs — cache briefly so opening
 // settings doesn't spawn subprocesses on every request.
@@ -620,7 +620,7 @@ import { homedir, platform } from "node:os";
 function findChromeCandidates(): { bin: string; headlessShell: boolean }[] {
   const out: { bin: string; headlessShell: boolean }[] = [];
   const home = homedir();
-  if (process.env.OPENPOD_CHROME) out.push({ bin: process.env.OPENPOD_CHROME, headlessShell: false });
+  if (process.env.OPENWRIGHT_CHROME) out.push({ bin: process.env.OPENWRIGHT_CHROME, headlessShell: false });
   const plat = platform();   // 'darwin' | 'win32' | 'linux'
 
   // playwright cache
@@ -677,7 +677,7 @@ const VENV_PY = [
   join(import.meta.dir, "..", ".venv", "bin", "python"),
   join(import.meta.dir, "..", ".venv", "Scripts", "python.exe"),
 ].find(existsSync);
-const PYTHON_BIN = process.env.OPENPOD_PYTHON || VENV_PY
+const PYTHON_BIN = process.env.OPENWRIGHT_PYTHON || VENV_PY
   || Bun.which("python3") || Bun.which("python") || Bun.which("py") || "python3";
 
 const CHROME = findChromeCandidates().find((c) => existsSync(c.bin)) || null;
@@ -817,7 +817,7 @@ async function exportPdf(gen_id: string) {
   if (!g || !g.artifact_path) return err("no artifact", 404);
   if (!/\.html$/i.test(g.artifact_path)) return err("export-pdf requires an HTML artifact", 400);
   if (!existsSync(g.artifact_path)) return err("artifact file missing on disk", 404);
-  if (!CHROME_BIN) return err("No Chrome/Chromium found — set OPENPOD_CHROME or run setup to install playwright chromium", 500);
+  if (!CHROME_BIN) return err("No Chrome/Chromium found — set OPENWRIGHT_CHROME or run setup to install playwright chromium", 500);
 
   const m = String(g.artifact_path).replace(/\\/g, "/").match(/\/workspaces\/(.+)$/);
   if (!m) return err("could not derive preview path", 500);
@@ -852,7 +852,7 @@ async function exportPdf(gen_id: string) {
 
 // Download a theme variant — same generation, alternate theme file.
 // Variant path is `<base>-<theme>.pptx` next to the original.
-// (md-engine retheme removed — openpod is html-engine only)
+// (md-engine retheme removed — openwright is html-engine only)
 
 // Scan the artifacts directory next to a base artifact and find sibling
 
@@ -1036,5 +1036,5 @@ Bun.serve({
 });
 
 const reaped = reapStrandedGenerations();
-if (reaped > 0) console.log(`[openpod] reaped ${reaped} stranded generation${reaped === 1 ? "" : "s"} from previous run`);
-console.log(`[openpod] http://localhost:${PORT}`);
+if (reaped > 0) console.log(`[openwright] reaped ${reaped} stranded generation${reaped === 1 ? "" : "s"} from previous run`);
+console.log(`[openwright] http://localhost:${PORT}`);

@@ -10,7 +10,7 @@
 //   - COPILOT_GITHUB_TOKEN / GH_TOKEN / GITHUB_TOKEN env var holding a
 //     FINE-GRAINED PAT with Copilot access (classic ghp_ tokens are
 //     rejected by the CLI)
-// Model via OPENPOD_COPILOT_MODEL (optional; defaults to Copilot's
+// Model via OPENWRIGHT_COPILOT_MODEL (optional; defaults to Copilot's
 // auto selection).
 // ============================================================
 import { join } from "node:path";
@@ -18,8 +18,8 @@ import { writeFileSync } from "node:fs";
 import type { AgentAdapter, AgentRunOpts, AgentResult } from "./types";
 import { resolveBin } from "./resolve-bin";
 
-const COPILOT_BIN = resolveBin("copilot", process.env.OPENPOD_COPILOT_BIN);
-const COPILOT_MODEL = process.env.OPENPOD_COPILOT_MODEL || "";
+const COPILOT_BIN = resolveBin("copilot", process.env.OPENWRIGHT_COPILOT_BIN);
+const COPILOT_MODEL = process.env.OPENWRIGHT_COPILOT_MODEL || "";
 
 // Classify a stdout line for the chat panel. Copilot's -p mode prints
 // prose plus tool-activity lines; the markers below are tolerant — an

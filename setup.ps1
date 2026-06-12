@@ -1,4 +1,4 @@
-# openpod setup — Windows (PowerShell). Interactive, idempotent,
+# openwright setup — Windows (PowerShell). Interactive, idempotent,
 # zero-prerequisite.
 #
 #   powershell -ExecutionPolicy Bypass -File setup.ps1        guided
@@ -34,14 +34,14 @@ function Step($m) { Write-Host "`n* $m" -ForegroundColor DarkYellow }
 function Ok($m)   { Write-Host "  + $m" -ForegroundColor Green }
 function Note($m) { Write-Host "  $m" -ForegroundColor DarkGray }
 function Ask($q, $def = $true) {
-  if ($Yes -or $env:OPENPOD_INSTALL_AGENTS -eq "1") { return $true }
+  if ($Yes -or $env:OPENWRIGHT_INSTALL_AGENTS -eq "1") { return $true }
   $suffix = if ($def) { "[Y/n]" } else { "[y/N]" }
   $r = Read-Host "  $q $suffix"
   if ($r -eq "") { return $def }
   return $r -match '^[yY]'
 }
 
-Write-Host "`n  openpod setup" -ForegroundColor White
+Write-Host "`n  openwright setup" -ForegroundColor White
 Note "Installs only what's missing; touches this repo, ~/.bun, ~/.local."
 
 # -- 1. bun ---------------------------------------------------------
@@ -112,13 +112,13 @@ if ((-not $haveClaude)  -and (Ask "Install Claude Code?" $false))        { Insta
 if ((-not $haveCopilot) -and (Ask "Install GitHub Copilot CLI?" $false)) { InstallEngine "copilot" }
 if ((-not $haveCodex)   -and (Ask "Install OpenAI Codex CLI?" $false))   { InstallEngine "codex" }
 
-# Enforce the minimum: openpod can't generate without an engine.
+# Enforce the minimum: openwright can't generate without an engine.
 if (-not ($haveClaude -or $haveCopilot -or $haveCodex)) {
   if ($Yes) {
     Note "installing Claude Code as the default engine"
     InstallEngine "claude"
   } else {
-    Write-Host "  openpod needs at least one agent engine." -ForegroundColor White
+    Write-Host "  openwright needs at least one agent engine." -ForegroundColor White
     while (-not ($haveClaude -or $haveCopilot -or $haveCodex)) {
       $pick = Read-Host "  Pick one to install — 1) Claude  2) Copilot  3) Codex"
       switch ($pick) {
@@ -135,8 +135,8 @@ if (-not ($haveClaude -or $haveCopilot -or $haveCodex)) {
 $defaultEngine = "claude"
 if (-not $haveClaude -and $haveCopilot) { $defaultEngine = "copilot" }
 elseif (-not $haveClaude -and -not $haveCopilot -and $haveCodex) { $defaultEngine = "codex" }
-if (-not (Select-String -Path ".env" -Pattern "^OPENPOD_AGENT=" -Quiet -ErrorAction SilentlyContinue)) {
-  Add-Content ".env" "OPENPOD_AGENT=$defaultEngine"
+if (-not (Select-String -Path ".env" -Pattern "^OPENWRIGHT_AGENT=" -Quiet -ErrorAction SilentlyContinue)) {
+  Add-Content ".env" "OPENWRIGHT_AGENT=$defaultEngine"
   Note "default engine: $defaultEngine (change in Settings or .env)"
 }
 

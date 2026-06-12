@@ -7,7 +7,7 @@ import { codexAdapter } from "./codex";
 
 export const ADAPTERS: AgentAdapter[] = [claudeAdapter, copilotAdapter, codexAdapter];
 
-export const DEFAULT_ENGINE = process.env.OPENPOD_AGENT || "claude";
+export const DEFAULT_ENGINE = process.env.OPENWRIGHT_AGENT || "claude";
 
 export function getAdapter(id?: string | null): AgentAdapter {
   const want = id || DEFAULT_ENGINE;

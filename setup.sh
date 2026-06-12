@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# openpod setup — interactive, idempotent, zero-prerequisite.
+# openwright setup — interactive, idempotent, zero-prerequisite.
 #
 #   bash setup.sh        guided setup (asks before each optional piece)
 #   bash setup.sh -y     non-interactive: install everything it can
@@ -11,7 +11,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 YES=0
-[ "${1:-}" = "-y" ] || [ "${OPENPOD_INSTALL_AGENTS:-}" = "1" ] && YES=1
+[ "${1:-}" = "-y" ] || [ "${OPENWRIGHT_INSTALL_AGENTS:-}" = "1" ] && YES=1
 
 bold()  { printf '\033[1m%s\033[0m\n' "$1"; }
 step()  { printf '\n\033[1;38;5;208m● %s\033[0m\n' "$1"; }
@@ -49,7 +49,7 @@ ask() {
 }
 
 printf '\n'
-bold "  openpod setup"
+bold "  openwright setup"
 note "Bring-your-own-agent deck workspace. This wizard installs only"
 note "what's missing and never touches anything outside this repo,"
 note "~/.bun, and ~/.local."
@@ -99,7 +99,7 @@ fi
 
 # ── 4. agent engines ─────────────────────────────────────────────
 # CLI installs go through bun's global shims, so node/npm are not
-# required. At least one engine is mandatory — openpod can't generate
+# required. At least one engine is mandatory — openwright can't generate
 # without one.
 step "Agent engines (at least one required)"
 
@@ -135,7 +135,7 @@ if [ "$HAVE_CLAUDE$HAVE_COPILOT$HAVE_CODEX" = "000" ]; then
     note "installing Claude Code as the default engine"
     install_engine claude
   else
-    bold "  openpod needs at least one agent engine."
+    bold "  openwright needs at least one agent engine."
     while [ "$HAVE_CLAUDE$HAVE_COPILOT$HAVE_CODEX" = "000" ]; do
       printf '  Pick one to install — 1) Claude  2) Copilot  3) Codex : '
       read -r pick || pick=1
@@ -154,8 +154,8 @@ fi
 DEFAULT_ENGINE="claude"
 [ "$HAVE_CLAUDE" = "0" ] && [ "$HAVE_COPILOT" = "1" ] && DEFAULT_ENGINE="copilot"
 [ "$HAVE_CLAUDE" = "0" ] && [ "$HAVE_COPILOT" = "0" ] && [ "$HAVE_CODEX" = "1" ] && DEFAULT_ENGINE="codex"
-if ! grep -q '^OPENPOD_AGENT=' .env 2>/dev/null; then
-  printf 'OPENPOD_AGENT=%s\n' "$DEFAULT_ENGINE" >> .env
+if ! grep -q '^OPENWRIGHT_AGENT=' .env 2>/dev/null; then
+  printf 'OPENWRIGHT_AGENT=%s\n' "$DEFAULT_ENGINE" >> .env
   note "default engine: $DEFAULT_ENGINE (change in Settings or .env)"
 fi
 

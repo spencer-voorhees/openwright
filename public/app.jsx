@@ -1,5 +1,5 @@
 /* ============================================================
-   openpod app — dashboard + 3-pane workspace + agent chat,
+   openwright app — dashboard + 3-pane workspace + agent chat,
    ported from the Claude Design prototype with wiring to the
    real REST API.
    ============================================================ */
@@ -378,7 +378,7 @@ function Rail({ workspaces, activeSlug, view, onHome, onOpen, onNew, onOpenDesig
   return (
     <aside className="rail">
       <button className="rail-logo" onClick={onHome} title="Workspaces">
-        <img src="/openpod-logo.svg?v=1" alt="openpod" />
+        <img src="/openwright-logo.svg?v=1" alt="openwright" />
       </button>
       <div className="rail-div" />
       <div className="rail-pods" ref={podsRef}>
@@ -443,7 +443,7 @@ function SettingsView() {
       <div className="dash-inner">
         <div className="dash-head">
           <div>
-            <div className="eyebrow" style={{ marginBottom: 12 }}>OpenPod</div>
+            <div className="eyebrow" style={{ marginBottom: 12 }}>OpenWright</div>
             <h1 className="dash-title">Settings</h1>
             <p className="dash-sub">Defaults for new workspaces. Each workspace can override its agent and model in workspace settings.</p>
           </div>
@@ -504,7 +504,7 @@ function Dashboard({ workspaces, onOpen, onNew, onMenu }) {
       <div className="dash-inner">
         <div className="dash-head">
           <div>
-            <div className="eyebrow" style={{ marginBottom: 12 }}>OpenPod</div>
+            <div className="eyebrow" style={{ marginBottom: 12 }}>OpenWright</div>
             <h1 className="dash-title">Workspaces</h1>
             <p className="dash-sub">Each workspace is a sandbox on the host where the agent works — drop in files, notes, and context, then generate artifacts.</p>
           </div>

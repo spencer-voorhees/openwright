@@ -1,4 +1,4 @@
-# openpod
+# openwright
 
 Agent-built slide decks from a workspace of files. Drop in source material
 (markdown, PDFs, transcripts, CSVs), hit Generate, and an agent writes a
@@ -18,14 +18,14 @@ detects engines you already have, and requires picking at least one:
 macOS / Linux:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/spencer-voorhees/openpod/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/spencer-voorhees/openwright/main/install.sh | bash
 bun start            # http://localhost:8090
 ```
 
 (append `-s -- -y` to the curl line for hands-off). Or from a clone:
 
 ```sh
-git clone https://github.com/spencer-voorhees/openpod && cd openpod
+git clone https://github.com/spencer-voorhees/openwright && cd openwright
 bash setup.sh        # guided; or `bash setup.sh -y` for hands-off
 bun start            # http://localhost:8090
 ```
@@ -33,7 +33,7 @@ bun start            # http://localhost:8090
 Windows (PowerShell):
 
 ```powershell
-irm https://raw.githubusercontent.com/spencer-voorhees/openpod/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/spencer-voorhees/openwright/main/install.ps1 | iex
 bun start
 ```
 
@@ -46,7 +46,7 @@ install missing ones (through bun's global shims — no node/npm
 needed), and can walk you through `copilot login` / `codex login`
 on the spot. PDF export resolves Chrome from playwright's chromium,
 puppeteer's cache, or a system Chrome/Edge install (override with
-`OPENPOD_CHROME`).
+`OPENWRIGHT_CHROME`).
 
 ### Agent auth (any one is enough)
 

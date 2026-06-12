@@ -1,5 +1,5 @@
 // ============================================================
-// openpod — agent adapter contract
+// openwright — agent adapter contract
 //
 // The whole BYOA story lives behind this interface. An adapter is a
 // single agent RUN: prompt in, files on disk out, progress events
@@ -18,7 +18,7 @@ export interface AgentEvent {
 
 export interface AgentRunOpts {
   prompt: string;        // the trigger message for this run
-  systemPrompt: string;  // openpod's full deck-building instructions
+  systemPrompt: string;  // openwright's full deck-building instructions
   cwd: string;           // the workspace directory — the agent's world
   model?: string;        // per-workspace override; "" = engine default
   abortSignal: AbortSignal;

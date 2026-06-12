@@ -1,27 +1,27 @@
-# openpod one-line bootstrap — Windows:
+# openwright one-line bootstrap — Windows:
 #
-#   irm https://raw.githubusercontent.com/spencer-voorhees/openpod/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/spencer-voorhees/openwright/main/install.ps1 | iex
 #
-# Fetches the repo into ~\openpod (git clone if git exists, zip
+# Fetches the repo into ~\openwright (git clone if git exists, zip
 # snapshot otherwise) and hands off to the interactive setup wizard.
 $ErrorActionPreference = "Stop"
 
-$repo = "https://github.com/spencer-voorhees/openpod"
-$dir  = if ($env:OPENPOD_DIR) { $env:OPENPOD_DIR } else { Join-Path $env:USERPROFILE "openpod" }
+$repo = "https://github.com/spencer-voorhees/openwright"
+$dir  = if ($env:OPENWRIGHT_DIR) { $env:OPENWRIGHT_DIR } else { Join-Path $env:USERPROFILE "openwright" }
 
 if (Test-Path (Join-Path $dir ".git")) {
-  Write-Host "openpod already at $dir — updating"
+  Write-Host "openwright already at $dir — updating"
   git -C $dir pull --ff-only
 } elseif (Get-Command git -ErrorAction SilentlyContinue) {
   git clone $repo $dir
 } else {
   Write-Host "git not found — downloading snapshot"
-  $zip = Join-Path $env:TEMP "openpod.zip"
+  $zip = Join-Path $env:TEMP "openwright.zip"
   Invoke-WebRequest "$repo/archive/refs/heads/main.zip" -OutFile $zip
-  $tmp = Join-Path $env:TEMP "openpod-unzip"
+  $tmp = Join-Path $env:TEMP "openwright-unzip"
   if (Test-Path $tmp) { Remove-Item $tmp -Recurse -Force }
   Expand-Archive $zip -DestinationPath $tmp
-  Move-Item (Join-Path $tmp "openpod-main") $dir
+  Move-Item (Join-Path $tmp "openwright-main") $dir
   Remove-Item $zip -Force
 }
 

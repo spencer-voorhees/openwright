@@ -2,7 +2,7 @@
 // Claude adapter — wraps @anthropic-ai/claude-agent-sdk.
 //
 // Auth: ANTHROPIC_API_KEY in the environment, or a logged-in Claude
-// Code install (`claude login`). Model via OPENPOD_CLAUDE_MODEL.
+// Code install (`claude login`). Model via OPENWRIGHT_CLAUDE_MODEL.
 // ============================================================
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { AgentAdapter, AgentRunOpts, AgentResult } from "./types";
@@ -10,8 +10,8 @@ import { resolveBin } from "./resolve-bin";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-const DEFAULT_MODEL = process.env.OPENPOD_CLAUDE_MODEL || "claude-sonnet-4-6";
-const MAX_TURNS = parseInt(process.env.OPENPOD_MAX_TURNS || "30", 10);
+const DEFAULT_MODEL = process.env.OPENWRIGHT_CLAUDE_MODEL || "claude-sonnet-4-6";
+const MAX_TURNS = parseInt(process.env.OPENWRIGHT_MAX_TURNS || "30", 10);
 
 // Compact one-line summary of a tool invocation for the chat panel.
 function summarizeToolInput(name: string, input: any): string {

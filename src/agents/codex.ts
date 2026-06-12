@@ -15,7 +15,7 @@ import { writeFileSync, unlinkSync } from "node:fs";
 import type { AgentAdapter, AgentRunOpts, AgentResult } from "./types";
 import { resolveBin } from "./resolve-bin";
 
-const CODEX_BIN = resolveBin("codex", process.env.OPENPOD_CODEX_BIN);
+const CODEX_BIN = resolveBin("codex", process.env.OPENWRIGHT_CODEX_BIN);
 
 function shortPath(p: string): string {
   const home = homedir();

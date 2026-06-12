@@ -1,5 +1,5 @@
 // ============================================================
-// openpod — generation engine (BYOA).
+// openwright — generation engine (BYOA).
 //
 // The outer loop here is engine-agnostic: trigger prompts, ASK:/DONE:
 // markers, idle watchdogs with auto-recovery, user stop, comment
@@ -14,11 +14,11 @@ import { db } from "./db";
 import { getAdapter, type AgentEvent } from "./agents/index";
 
 const REPO_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-export const WORKSPACE_ROOT = process.env.OPENPOD_WORKSPACES || join(REPO_ROOT, "workspaces");
+export const WORKSPACE_ROOT = process.env.OPENWRIGHT_WORKSPACES || join(REPO_ROOT, "workspaces");
 export const HTML_ENGINE_DIR = join(REPO_ROOT, "html-engine");
 
-const AGENT_IDLE_TIMEOUT_MS = parseInt(process.env.OPENPOD_IDLE_TIMEOUT_MS || `${10 * 60_000}`, 10);
-const AGENT_LOOP_TIMEOUT_MS = parseInt(process.env.OPENPOD_LOOP_TIMEOUT_MS || `${30 * 60_000}`, 10);
+const AGENT_IDLE_TIMEOUT_MS = parseInt(process.env.OPENWRIGHT_IDLE_TIMEOUT_MS || `${10 * 60_000}`, 10);
+const AGENT_LOOP_TIMEOUT_MS = parseInt(process.env.OPENWRIGHT_LOOP_TIMEOUT_MS || `${30 * 60_000}`, 10);
 
 function appendMessage(gen_id: number, role: "agent" | "user", content: string): number {
   const r = db.run("INSERT INTO messages(generation_id, role, content, ts) VALUES(?, ?, ?, ?)",
@@ -52,7 +52,7 @@ export function postUserReply(gen_id: number, content: string) {
 }
 
 // Mid-run steering is engine-specific (the Claude SDK supports it,
-// subprocess CLIs don't) — openpod keeps the endpoint but records the
+// subprocess CLIs don't) — openwright keeps the endpoint but records the
 // note for the NEXT loop iteration instead of injecting mid-turn.
 const steerNotes = new Map<number, string[]>();
 export function postSteer(gen_id: number, content: string) {
@@ -150,10 +150,10 @@ function buildSystemPrompt(ws: any, files: any[], userPrompt?: string, artifact?
   if (ds?.css) { try { writeFileSync(dsCssPath, ds.css); } catch {} }
   const persona = ws.persona || "terse-technical";
   const personaGuidance = PERSONA_GUIDANCE[persona] || PERSONA_GUIDANCE["terse-technical"];
-  return `You are openpod, an agent whose only job is to turn a workspace of mixed-format
+  return `You are openwright, an agent whose only job is to turn a workspace of mixed-format
 files into a slide deck.
 
-You write the deck as a SINGLE HTML FILE that openpod renders live in an
+You write the deck as a SINGLE HTML FILE that openwright renders live in an
 iframe (no build step). The same source ships to PDF (chromium print) and
 to editable PPTX (DOM-walking exporter) — so HTML/CSS is the source of
 truth; what you write is what the user sees.
@@ -167,7 +167,7 @@ ${fileList || "  (no files)"}
 
 # The deck shell
 
-Reference the openpod-provided deck shell + this workspace's design-
+Reference the openwright-provided deck shell + this workspace's design-
 system CSS at the top of your file:
 
     <link rel="stylesheet" href="${dsCssUrl}">
@@ -402,7 +402,7 @@ export async function startGeneration(gen_id: number, opts: { fresh?: boolean } 
   ).get(artifact.id) as any)?.m as (number | null);
   const nextVersion = (maxByArtifact || 0) + 1;
   const artifactDirRel = `./artifacts/${artifact.slug}`;
-  const versionPin = `Write the deck to ${artifactDirRel}/deck-v${nextVersion}.html. The HTML IS the deliverable — no separate build step. openpod renders it live in an iframe + exports to PDF / PPTX from the same source. v${nextVersion} is the next available integer above all existing files in ${artifactDirRel}/.`;
+  const versionPin = `Write the deck to ${artifactDirRel}/deck-v${nextVersion}.html. The HTML IS the deliverable — no separate build step. openwright renders it live in an iframe + exports to PDF / PPTX from the same source. v${nextVersion} is the next available integer above all existing files in ${artifactDirRel}/.`;
 
   const openComments = db.query(
     `SELECT id, slide_index, body, created_at

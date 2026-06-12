@@ -5,7 +5,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
 import { fileURLToPath } from "node:url";
-const DB_PATH = process.env.OPENPOD_DB || fileURLToPath(new URL("../openpod.db", import.meta.url));
+const DB_PATH = process.env.OPENWRIGHT_DB || fileURLToPath(new URL("../openwright.db", import.meta.url));
 mkdirSync(dirname(DB_PATH), { recursive: true });
 
 export const db = new Database(DB_PATH, { create: true });
@@ -235,7 +235,7 @@ export interface Message { id: number; generation_id: number; role: "agent" | "u
 
 // ─── app settings ──────────────────────────────────────────────────
 // Global defaults (default agent engine/model for new workspaces).
-// OPENPOD_AGENT env seeds the engine default on first boot only;
+// OPENWRIGHT_AGENT env seeds the engine default on first boot only;
 // after that the UI-set value wins.
 export function getSetting(key: string, fallback = ""): string {
   const row = db.query("SELECT value FROM settings WHERE key = ?").get(key) as any;
@@ -248,5 +248,5 @@ export function setSetting(key: string, value: string) {
 }
 
 if (!(db.query("SELECT 1 FROM settings WHERE key = 'default_agent_engine'").get())) {
-  setSetting("default_agent_engine", process.env.OPENPOD_AGENT || "claude");
+  setSetting("default_agent_engine", process.env.OPENWRIGHT_AGENT || "claude");
 }
