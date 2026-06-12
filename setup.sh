@@ -68,6 +68,11 @@ fi
 step "JS dependencies"
 bun install --silent
 bun link --silent >/dev/null 2>&1 || bun link
+# Durable shim independent of bun link: ~/.local/bin is on PATH for
+# most shells; the script execs bun with this repo's CLI.
+mkdir -p "$HOME/.local/bin"
+printf '#!/usr/bin/env bash\nexec "%s" "%s" "$@"\n' "$HOME/.bun/bin/bun" "$(pwd)/bin/openwright.ts" > "$HOME/.local/bin/openwright"
+chmod +x "$HOME/.local/bin/openwright"
 ok "installed (+ openwright CLI on PATH)"
 
 # ── 2. python toolchain via uv (exports — recommended) ──────────

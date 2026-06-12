@@ -61,6 +61,18 @@ Step "JS dependencies"
 bun install --silent
 if (-not (Have "bun")) { Write-Host "bun is required but missing - rerun setup"; exit 1 }
 cmd /c "bun link >/dev/null 2>&1"
+
+# Make the CLI durable regardless of how bun landed:
+# 1. an explicit shim in ~\.bunin (bun link's shim can be flaky)
+$bunBin = Join-Path $env:USERPROFILE ".bun\bin"
+$shim = Join-Path $bunBin "openwright.cmd"
+"@echo off`r`n`"$bunBin\bun.exe`" `"$PSScriptRoot\bin\openwright.ts`" %*" | Set-Content -Path $shim -Encoding Ascii
+# 2. ~\.bunin on the persistent User PATH (the bun installer's
+#    registry write does not always reach already-open sessions)
+$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+if ($userPath -notlike "*$bunBin*") {
+  [Environment]::SetEnvironmentVariable("Path", "$bunBin;$userPath", "User")
+}
 Ok "installed (+ openwright CLI on PATH)"
 
 # -- 2. python via uv ----------------------------------------------
