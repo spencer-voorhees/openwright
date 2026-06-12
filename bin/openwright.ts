@@ -105,6 +105,35 @@ async function update() {
   else console.log("updated — `openwright start` when ready");
 }
 
+async function uninstall(all = false) {
+  if (await healthy()) stop();
+  // Shims + bun link registration. The repo itself (your workspaces,
+  // database, exports) stays unless --all.
+  try { Bun.spawnSync({ cmd: [process.execPath, "unlink"], cwd: ROOT }); } catch {}
+  const home = process.env.HOME || process.env.USERPROFILE || "";
+  for (const shim of [
+    join(home, ".local", "bin", "openwright"),
+    join(home, ".bun", "bin", "openwright"),
+    join(home, ".bun", "bin", "openwright.cmd"),
+    join(home, ".bun", "bin", "openwright.exe"),
+  ]) { try { unlinkSync(shim); } catch {} }
+  console.log("openwright command removed.");
+  if (!all) {
+    console.log(`Everything else lives in ${ROOT} (workspaces, database, exports).`);
+    console.log("Delete that folder to remove it all, or run: openwright uninstall --all");
+    console.log("(bun and uv are shared tools and are left installed)");
+    return;
+  }
+  // --all: delete the repo from a detached shell so this process can exit first.
+  console.log(`Deleting ${ROOT} ...`);
+  if (platform() === "win32") {
+    Bun.spawn({ cmd: ["cmd", "/c", `ping -n 3 127.0.0.1 > /dev/null & rmdir /s /q "${ROOT}"`], stdout: "ignore", stderr: "ignore" }).unref();
+  } else {
+    Bun.spawn({ cmd: ["sh", "-c", `sleep 1 && rm -rf "${ROOT}"`], stdout: "ignore", stderr: "ignore" }).unref();
+  }
+  console.log("Gone. (bun and uv are shared tools and are left installed)");
+}
+
 function setup() {
   const cmd = platform() === "win32"
     ? ["powershell", "-ExecutionPolicy", "Bypass", "-File", join(ROOT, "setup.ps1")]
@@ -122,6 +151,7 @@ switch (cmd) {
   case "open":    openBrowser(); break;
   case "update":  await update(); break;
   case "setup":   setup(); break;
+  case "uninstall": await uninstall(args.includes("--all")); break;
   default:
     console.log(`openwright — BYOA work-artifact workspace
 
@@ -134,5 +164,6 @@ usage: openwright <command>
   logs [n]     tail the server log
   open         open the app in your browser
   update       git pull + deps + restart if running
-  setup        re-run the setup wizard`);
+  setup        re-run the setup wizard
+  uninstall    remove the CLI; --all deletes the whole install`);
 }

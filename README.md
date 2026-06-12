@@ -56,10 +56,13 @@ puppeteer's cache, or a system Chrome/Edge install (override with
 Setup links an `openwright` command globally:
 
 ```
-openwright start | stop | restart | status | logs [n] | open | update | setup
+openwright start | stop | restart | status | logs [n] | open | update | setup | uninstall
 ```
 
 `update` pulls the latest, reinstalls deps, and restarts if running.
+`uninstall` removes the command (your data stays in the repo folder);
+`uninstall --all` deletes the entire install. bun and uv are shared
+tools and are left in place either way.
 
 ### Agent auth (any one is enough)
 
