@@ -137,8 +137,9 @@ function openBrowser() {
     : platform() === "win32" ? ["cmd", "/c", "start", "", URL_]
     : ["xdg-open", URL_];
   // sync: the CLI exits right after, and a killed async child means
-  // the browser never opens (seen on Windows).
-  Bun.spawnSync({ cmd, stdout: "ignore", stderr: "ignore" });
+  // the browser never opens (seen on Windows). Headless boxes have no
+  // opener at all — that's fine, the URL is printed either way.
+  try { Bun.spawnSync({ cmd, stdout: "ignore", stderr: "ignore" }); } catch {}
   console.log(URL_);
 }
 
