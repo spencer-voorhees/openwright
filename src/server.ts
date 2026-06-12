@@ -671,8 +671,13 @@ function findChromeCandidates(): { bin: string; headlessShell: boolean }[] {
   );
   return out;
 }
-// Python for the PPTX exporters: python3 on unix, python/py on Windows.
-const PYTHON_BIN = process.env.OPENPOD_PYTHON
+// Python for the PPTX exporters: the repo venv that setup creates
+// wins; otherwise python3/python/py from PATH.
+const VENV_PY = [
+  join(import.meta.dir, "..", ".venv", "bin", "python"),
+  join(import.meta.dir, "..", ".venv", "Scripts", "python.exe"),
+].find(existsSync);
+const PYTHON_BIN = process.env.OPENPOD_PYTHON || VENV_PY
   || Bun.which("python3") || Bun.which("python") || Bun.which("py") || "python3";
 
 const CHROME = findChromeCandidates().find((c) => existsSync(c.bin)) || null;

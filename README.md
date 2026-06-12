@@ -11,26 +11,33 @@ Codex CLI. Engine and model are selectable per workspace.
 
 ## Quick start
 
+One command after cloning — the wizard installs everything it needs
+(bun, an isolated Python via uv, agent CLIs) on a machine with zero
+prerequisites, asking before each optional piece:
+
 macOS / Linux:
 
 ```sh
-git clone <this repo> && cd openpod
-bash setup.sh        # bun + js deps + python exporters + agent detection
+git clone https://github.com/spencer-voorhees/openpod && cd openpod
+bash setup.sh        # guided; or `bash setup.sh -y` for hands-off
 bun start            # http://localhost:8090
 ```
 
 Windows (PowerShell):
 
 ```powershell
-git clone <this repo>; cd openpod
-powershell -ExecutionPolicy Bypass -File setup.ps1
+git clone https://github.com/spencer-voorhees/openpod; cd openpod
+powershell -ExecutionPolicy Bypass -File setup.ps1   # add -Yes for hands-off
 bun start
 ```
 
-Both scripts are idempotent. Set `OPENPOD_INSTALL_AGENTS=1` to let them
-`npm install -g` the Copilot/Codex CLIs they don't find. PDF export
-resolves Chrome from playwright's chromium, puppeteer's cache, or a
-system Chrome/Edge install (override with `OPENPOD_CHROME`).
+Both wizards are idempotent and touch nothing outside the repo,
+`~/.bun`, and `~/.local`. They detect installed agent CLIs, offer to
+install missing ones (through bun's global shims — no node/npm
+needed), and can walk you through `copilot login` / `codex login`
+on the spot. PDF export resolves Chrome from playwright's chromium,
+puppeteer's cache, or a system Chrome/Edge install (override with
+`OPENPOD_CHROME`).
 
 ### Agent auth (any one is enough)
 
