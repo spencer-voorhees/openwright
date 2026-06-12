@@ -1339,6 +1339,13 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted })
   // in instead. Reset whenever the underlying generation changes (the
   // key remounts the iframe, so onLoad fires again).
   const [previewLoaded, setPreviewLoaded] = useState(false);
+  // Collapsing the tall preview brings uploads/files above the fold;
+  // remembered per browser.
+  const [previewHidden, setPreviewHidden] = useState(() => localStorage.getItem("ow-preview-hidden") === "1");
+  const togglePreview = () => setPreviewHidden((h) => {
+    localStorage.setItem("ow-preview-hidden", h ? "0" : "1");
+    return !h;
+  });
   useEffect(() => {
     const onMsg = (e) => {
       if (e?.data?.type !== "workpod-slide") return;
@@ -1393,7 +1400,7 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted })
   const wsSlug = (normPath(cur.artifact_path).match(/\/workspaces\/([^/]+)\//) || [])[1] || null;
   return (
     <div className="artifact fade-up">
-      {previewUrl && (
+      {previewUrl && !previewHidden && (
         <div className="artifact-preview">
           {/* cur.id in the src busts the iframe when a new generation
               lands on the SAME file (agents often edit deck-vN.html in
@@ -1419,6 +1426,13 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted })
           </div>
           <div className="artifact-sub">HTML · run #{cur.id} · {fmtTime(cur.completed_at)}{isLatest ? "" : " · viewing older version"}</div>
         </div>
+        {previewUrl && (
+          <button className="icon-btn preview-toggle"
+                  title={previewHidden ? "Show the deck preview" : "Hide the deck preview"}
+                  onClick={togglePreview}>
+            <Icon name={previewHidden ? "chevron-down" : "chevron-up"} />
+          </button>
+        )}
         {cur.artifact_id && <CommentsSection artifactId={cur.artifact_id} wsSlug={wsSlug}
                                              refreshKey={commentsBump}
                                              onKickedOff={(genId) => { onRefresh(); onRunStarted?.(genId); }}

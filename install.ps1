@@ -1,4 +1,4 @@
-﻿# openwright one-line bootstrap - Windows:
+# openwright one-line bootstrap - Windows:
 #
 #   irm https://raw.githubusercontent.com/spencer-voorhees/openwright/main/install.ps1 | iex
 #

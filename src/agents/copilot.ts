@@ -14,7 +14,8 @@
 // auto selection).
 // ============================================================
 import { join } from "node:path";
-import { writeFileSync } from "node:fs";
+import { writeFileSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import type { AgentAdapter, AgentRunOpts, AgentResult } from "./types";
 import { resolveBin } from "./resolve-bin";
 
@@ -33,6 +34,24 @@ function classifyLine(line: string): { kind: "text" | "tool" | "system"; text: s
   }
   if (/^(Error|Warning):/i.test(t)) return { kind: "system", text: t.trim() };
   return { kind: "text", text: t };
+}
+
+// Best-effort identity: the CLI prints the login during the device
+// flow but offers no status command; some builds persist it under
+// ~/.copilot. Absence is fine — the chip just stays generic.
+function copilotUser(): string | null {
+  try {
+    const dir = join(homedir(), ".copilot");
+    for (const f of ["config.json", "settings.json", "auth.json", "hosts.json", "user.json"]) {
+      try {
+        const d = JSON.parse(readFileSync(join(dir, f), "utf-8").replace(/^\s*\/\/.*$/gm, ""));
+        const flat = JSON.stringify(d);
+        const m = flat.match(/"(?:login|user(?:name)?|github_login|gh_user)"\s*:\s*"([A-Za-z0-9-]{1,40})"/);
+        if (m) return m[1]!;
+      } catch {}
+    }
+  } catch {}
+  return null;
 }
 
 export const copilotAdapter: AgentAdapter = {
@@ -91,7 +110,10 @@ export const copilotAdapter: AgentAdapter = {
     if (/no authentication information|not authenticated|please log ?in/i.test(out)) {
       return { ok: false, detail: "not signed in. Run 'copilot login' in a terminal" };
     }
-    if (/\bOK\b/.test(out)) return { ok: true, detail: "signed in, Copilot responded" };
+    if (/\bOK\b/.test(out)) {
+      const user = copilotUser();
+      return { ok: true, detail: user ? `signed in as ${user}` : "signed in, Copilot responded" };
+    }
     return { ok: false, detail: `unexpected reply: ${out.trim().slice(-160) || "(no output)"}` };
   },
 
