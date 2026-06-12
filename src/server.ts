@@ -1016,8 +1016,11 @@ Bun.serve({
     // Logo tinted to the accent — the source svg is single-fill.
     if (url.pathname === "/logo.svg") {
       const c = (url.searchParams.get("c") || "ff5a1f").replace(/[^0-9a-fA-F]/g, "").slice(0, 6);
+      // Re-center the mark in a square canvas: the raw viewBox rides
+      // the robot high-left, which shows at favicon size.
       const svg = readFileSync(join(import.meta.dir, "..", "public", "openwright-logo.svg"), "utf-8")
-        .replace(/#ff5a1f/gi, `#${c.padEnd(6, "f")}`);
+        .replace(/#ff5a1f/gi, `#${c.padEnd(6, "f")}`)
+        .replace('viewBox="3 0.5 14 14"', 'viewBox="2.5 0 15 15"');
       return new Response(svg, { headers: { "content-type": "image/svg+xml", "cache-control": "public, max-age=3600" } });
     }
     if (url.pathname.startsWith("/api/")) {
