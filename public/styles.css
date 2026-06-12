@@ -947,7 +947,8 @@ textarea.field { resize: none; line-height: 1.5; }
   .rail-logo { width: 34px; height: 34px; border-radius: 9px; }
   .rail-logo img { width: 34px; height: 34px; }
   .rail-div { width: 1px; height: 26px; margin: 0; }
-  .rail-pods { flex-direction: row; flex: 1; overflow-x: auto; overflow-y: hidden; padding: 2px 5px; gap: 8px; }
+  /* 5px vertical room too: the active ring extends ~3.5px beyond the chip and overflow-y: hidden was clipping its top and bottom. */
+  .rail-pods { flex-direction: row; flex: 1; overflow-x: auto; overflow-y: hidden; padding: 5px; gap: 8px; }
   .pod-chip, .rail-btn { width: 34px; height: 34px; flex: 0 0 34px; margin: 0; }
   .dash-inner { padding: 24px 16px 56px; }
   .dash-head { flex-direction: column; align-items: stretch; gap: 16px; }
