@@ -98,6 +98,12 @@
   --wp-border-strong: rgba(255,255,255,0.14);
 
   --wp-pos: #30d158;
+  /* Working/active status — a CONSTANT, never the accent: status
+     semantics must not change color (or lose contrast) when the user
+     re-themes the app. */
+  --wp-run:      #FF9F0A;
+  --wp-run-tint: rgba(255, 159, 10, 0.14);
+  --wp-run-line: rgba(255, 159, 10, 0.34);
   --wp-warn: #ffd60a;
 
   --wp-density-row: 40px;
@@ -160,7 +166,7 @@ a { color: var(--wp-link); }
 .rail-btn { width: 38px; height: 38px; flex: 0 0 38px; border-radius: 11px; border: 1px dashed var(--wp-border-strong); background: transparent; color: var(--wp-fg-muted); cursor: pointer; display: grid; place-items: center; transition: all var(--um-dur-fast) var(--um-ease-soft); }
 .rail-btn:hover { color: var(--wp-fg); border-color: var(--wp-accent-line); background: var(--wp-accent-tint); }
 
-.s-generating { background: var(--wp-accent); }
+.s-generating { background: var(--wp-run); }
 .s-validating { background: var(--um-blue-soft); }
 .s-input { background: var(--wp-link); }
 .s-ready { background: var(--wp-pos); }
@@ -184,7 +190,7 @@ a { color: var(--wp-link); }
 
 .pill { display: inline-flex; align-items: center; gap: 6px; font-family: var(--um-font-mono); font-size: 10.5px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; padding: 4px 9px; border-radius: 999px; border: 1px solid var(--wp-border); color: var(--wp-fg-muted); background: rgba(255,255,255,0.03); white-space: nowrap; }
 .pill .pdot { width: 7px; height: 7px; border-radius: 999px; }
-.pill.is-generating { color: var(--wp-accent); border-color: var(--wp-accent-line); background: var(--wp-accent-tint); }
+.pill.is-generating { color: var(--wp-run); border-color: var(--wp-run-line); background: var(--wp-run-tint); }
 .pill.is-validating { color: var(--um-blue-soft); border-color: rgba(41,151,255,.35); background: rgba(41,151,255,.10); }
 .pill.is-input { color: var(--wp-link); border-color: rgba(41,151,255,.3); background: rgba(41,151,255,.1); }
 .pill.is-ready { color: var(--wp-pos); border-color: rgba(48,209,88,.3); background: rgba(48,209,88,.1); }
@@ -927,7 +933,7 @@ textarea.field { resize: none; line-height: 1.5; }
 /* Pending peer review — animated dots, pill matches generating color
    but with reviewing… label. */
 .ev-peer.is-pending { border-style: dashed; }
-.pill.is-pending { color: var(--wp-accent); border-color: var(--wp-accent-line); background: var(--wp-accent-tint); }
+.pill.is-pending { color: var(--wp-run); border-color: var(--wp-run-line); background: var(--wp-run-tint); }
 @keyframes wp-ellipsis {
   0%   { content: ""; }
   25%  { content: "."; }
