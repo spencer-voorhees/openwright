@@ -22,16 +22,26 @@ import { ADAPTERS, DEFAULT_ENGINE } from "./agents/index";
 
 const PORT = Number(process.env.OPENWRIGHT_PORT || process.env.PORT || 8090);
 
-// Model lists are probed from CLIs/APIs — cache briefly so opening
-// settings doesn't spawn subprocesses on every request.
-const modelCache = new Map<string, { at: number; models: string[] }>();
-async function listModelsCached(a: { id: string; listModels(): Promise<string[]> }): Promise<string[]> {
-  const hit = modelCache.get(a.id);
-  if (hit && Date.now() - hit.at < 5 * 60_000) return hit.models;
-  const models = await a.listModels().catch(() => [] as string[]);
-  modelCache.set(a.id, { at: Date.now(), models });
-  return models;
+// Accent presets — the UI offers exactly these; PATCH validates.
+const ACCENT_PRESETS = ["#ff5a1f", "#0A84FF", "#BF5AF2", "#30D158", "#FF375F", "#64D2FF", "#FFD60A"];
+
+// Agent probes spawn CLIs (--version, login status, help) — cache per
+// adapter and refresh in parallel so /api/agents answers fast.
+type AgentProbe = { id: string; label: string; models: string[]; ok: boolean; detail: string };
+const probeCache = new Map<string, { at: number; probe: AgentProbe }>();
+async function probeAgent(a: (typeof ADAPTERS)[number]): Promise<AgentProbe> {
+  const hit = probeCache.get(a.id);
+  if (hit && Date.now() - hit.at < 60_000) return hit.probe;
+  const [avail, models] = await Promise.all([
+    a.available().catch(() => ({ ok: false, detail: "probe failed" })),
+    a.listModels().catch(() => [] as string[]),
+  ]);
+  const probe = { id: a.id, label: a.label, models, ...avail };
+  probeCache.set(a.id, { at: Date.now(), probe });
+  return probe;
 }
+// Warm the cache at boot so the first settings open is instant.
+setTimeout(() => { for (const a of ADAPTERS) probeAgent(a); }, 250);
 
 mkdirSync(WORKSPACE_ROOT, { recursive: true });
 
@@ -887,10 +897,7 @@ function route(req: Request, url: URL): Promise<Response> | Response {
   if ((mt = m("/api/generations/(\\d+)/export-pdf")) && req.method === "POST") return exportPdf(mt[1]);
   if (url.pathname === "/api/agents" && req.method === "GET") {
     return (async () => {
-      const out = [];
-      for (const a of ADAPTERS) {
-        out.push({ id: a.id, label: a.label, models: await listModelsCached(a), ...(await a.available()) });
-      }
+      const out = await Promise.all(ADAPTERS.map(probeAgent));
       const def = getSetting("default_agent_engine", DEFAULT_ENGINE);
       return json({ agents: out, default: ADAPTERS.some((a) => a.id === def) ? def : DEFAULT_ENGINE });
     })();
@@ -900,12 +907,13 @@ function route(req: Request, url: URL): Promise<Response> | Response {
       settings: {
         default_agent_engine: getSetting("default_agent_engine", DEFAULT_ENGINE),
         default_agent_model: getSetting("default_agent_model", ""),
+        accent_color: getSetting("accent_color", "#ff5a1f"),
       },
     });
   }
   if (url.pathname === "/api/settings" && req.method === "PATCH") {
     return (async () => {
-      const body = await req.json() as { default_agent_engine?: string; default_agent_model?: string };
+      const body = await req.json() as { default_agent_engine?: string; default_agent_model?: string; accent_color?: string };
       if (body.default_agent_engine !== undefined) {
         if (!ADAPTERS.some((a) => a.id === body.default_agent_engine)) return err("unknown engine");
         setSetting("default_agent_engine", body.default_agent_engine);
@@ -913,10 +921,15 @@ function route(req: Request, url: URL): Promise<Response> | Response {
       if (body.default_agent_model !== undefined) {
         setSetting("default_agent_model", String(body.default_agent_model || "").trim());
       }
+      if (body.accent_color !== undefined) {
+        if (!ACCENT_PRESETS.includes(body.accent_color)) return err("unknown accent color");
+        setSetting("accent_color", body.accent_color);
+      }
       return json({
         settings: {
           default_agent_engine: getSetting("default_agent_engine", DEFAULT_ENGINE),
           default_agent_model: getSetting("default_agent_model", ""),
+          accent_color: getSetting("accent_color", "#ff5a1f"),
         },
       });
     })();
@@ -945,6 +958,13 @@ Bun.serve({
   port: PORT,
   async fetch(req) {
     const url = new URL(req.url);
+    // Logo tinted to the accent — the source svg is single-fill.
+    if (url.pathname === "/logo.svg") {
+      const c = (url.searchParams.get("c") || "ff5a1f").replace(/[^0-9a-fA-F]/g, "").slice(0, 6);
+      const svg = readFileSync(join(import.meta.dir, "..", "public", "openwright-logo.svg"), "utf-8")
+        .replace(/#ff5a1f/gi, `#${c.padEnd(6, "f")}`);
+      return new Response(svg, { headers: { "content-type": "image/svg+xml", "cache-control": "public, max-age=3600" } });
+    }
     if (url.pathname.startsWith("/api/")) {
       try {
         return await route(req, url);

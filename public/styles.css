@@ -1214,3 +1214,14 @@ textarea.field { resize: none; line-height: 1.5; }
   border-radius: 8px; image-rendering: pixelated;
   border: 1px solid var(--wp-border);
 }
+
+/* ─── accent swatches (settings) ────────────────────────────── */
+.set-accents { display: flex; gap: 12px; flex-wrap: wrap; }
+.set-accent {
+  width: 38px; height: 38px; border-radius: 12px; cursor: pointer;
+  border: 2px solid transparent; display: grid; place-items: center;
+  transition: transform .12s ease, border-color .12s ease;
+}
+.set-accent:hover { transform: scale(1.08); }
+.set-accent.active { border-color: #fff; }
+.set-accent svg { width: 16px; height: 16px; color: #fff; filter: drop-shadow(0 1px 2px rgba(0,0,0,.6)); }

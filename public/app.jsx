@@ -215,6 +215,12 @@ function App() {
     setWorkspaces(d.workspaces || []);
   }, []);
   useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => {
+    fetchJson("/api/settings")
+      .then((d) => d.settings?.accent_color && applyAccent(d.settings.accent_color))
+      .catch(() => {});
+    fetchJson("/api/agents").catch(() => {});   // warm the probe cache
+  }, []);
 
   const openWs = useCallback((slug) => {
     setActiveSlug(slug);
@@ -301,6 +307,49 @@ function App() {
 // Colors are the iOS dark-mode system palette — bold, saturated,
 // built for near-black backgrounds. The tile is the color at low
 // alpha; the pattern is the color near full strength.
+// ─── accent theming ────────────────────────────────────────────
+// One source accent drives the CSS variable family, the favicon, and
+// the rail logo (served re-tinted by /logo.svg?c=).
+const ACCENTS = [
+  { name: "Ultra",  hex: "#ff5a1f" },
+  { name: "Blue",   hex: "#0A84FF" },
+  { name: "Purple", hex: "#BF5AF2" },
+  { name: "Green",  hex: "#30D158" },
+  { name: "Pink",   hex: "#FF375F" },
+  { name: "Cyan",   hex: "#64D2FF" },
+  { name: "Yellow", hex: "#FFD60A" },
+];
+let CURRENT_ACCENT = "#ff5a1f";
+function shade(hex, f) {
+  const n = parseInt(hex.slice(1), 16);
+  const ch = (x) => Math.max(0, Math.min(255, Math.round(x)));
+  const r = ch(((n >> 16) & 255) * f), g = ch(((n >> 8) & 255) * f), b = ch((n & 255) * f);
+  return `rgb(${r} ${g} ${b})`;
+}
+function applyAccent(hex) {
+  if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return;
+  CURRENT_ACCENT = hex;
+  const n = parseInt(hex.slice(1), 16);
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  const rs = document.documentElement.style;
+  rs.setProperty("--um-ultra", hex);
+  rs.setProperty("--um-ultra-deep", shade(hex, 0.78));
+  rs.setProperty("--um-ultra-soft", `rgb(${Math.min(255, r + 48)} ${Math.min(255, g + 48)} ${Math.min(255, b + 48)})`);
+  rs.setProperty("--wp-accent-tint", `rgba(${r}, ${g}, ${b}, 0.14)`);
+  rs.setProperty("--wp-accent-line", `rgba(${r}, ${g}, ${b}, 0.32)`);
+  document.querySelectorAll('link[rel="icon"]').forEach((l) => { l.href = `/logo.svg?c=${hex.slice(1)}`; });
+  window.dispatchEvent(new CustomEvent("op-accent", { detail: hex }));
+}
+function useAccent() {
+  const [accent, setAccent] = useState(CURRENT_ACCENT);
+  useEffect(() => {
+    const h = (e) => setAccent(e.detail);
+    window.addEventListener("op-accent", h);
+    return () => window.removeEventListener("op-accent", h);
+  }, []);
+  return accent;
+}
+
 function icHash(str) {
   let h = 2166136261;
   for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
@@ -333,6 +382,11 @@ function Identicon({ seed, className, soft }) {
       ))}
     </svg>
   );
+}
+
+function RailLogo() {
+  const accent = useAccent();
+  return <img src={`/logo.svg?c=${accent.slice(1)}`} alt="openwright" />;
 }
 
 function railStatus(ws) {
@@ -378,7 +432,7 @@ function Rail({ workspaces, activeSlug, view, onHome, onOpen, onNew, onOpenDesig
   return (
     <aside className="rail">
       <button className="rail-logo" onClick={onHome} title="Workspaces">
-        <img src="/openwright-logo.svg?v=1" alt="openwright" />
+        <RailLogo />
       </button>
       <div className="rail-div" />
       <div className="rail-pods" ref={podsRef}>
@@ -471,8 +525,23 @@ function SettingsView() {
         </div>
 
         <div className="set-section">
+          <h2 className="set-section-title">Accent color</h2>
+          <p className="set-section-sub">Drives buttons, highlights, and the logo.</p>
+          <div className="set-accents">
+            {ACCENTS.map((a) => (
+              <button key={a.hex} title={a.name}
+                      className={"set-accent" + ((settings?.accent_color || "#ff5a1f") === a.hex ? " active" : "")}
+                      style={{ background: a.hex }}
+                      onClick={async () => { await save({ accent_color: a.hex }); applyAccent(a.hex); }}>
+                {(settings?.accent_color || "#ff5a1f") === a.hex && <Icon name="check" />}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="set-section">
           <h2 className="set-section-title">Default model</h2>
-          <p className="set-section-sub">Models the selected engine reports as available right now.</p>
+          <p className="set-section-sub">Models the selected engine reports as available right now. A frontier model (Opus 4.8 or equivalent) is recommended; smaller models produce noticeably weaker decks.</p>
           <select className="field set-model" value={settings?.default_agent_model || ""}
                   onChange={(e) => save({ default_agent_model: e.target.value })}>
             <option value="">{engInfo ? `Engine default · ${engInfo.label}` : "Engine default"}</option>
