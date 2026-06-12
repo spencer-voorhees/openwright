@@ -145,13 +145,17 @@ function Heartbeat({ startedAt, lastMessageAt, phase = null, compact = false }) 
   const cls =
     idleMs > 300_000 ? "hb-stale" :
     idleMs > 120_000 ? "hb-warm"  : "hb-ok";
+  // No dot here — the StatusPill beside it is the region's one light.
+  // Idle only appears once it means something; below 10s it just
+  // flickered between 0s and 1s.
   return (
     <span className={"hb " + cls}>
-      <span className="hb-dot" />
       {!compact && <span className="hb-run">{fmtElapsed(runMs)} running</span>}
-      <span className="hb-idle" title={`Last agent message ${fmtElapsed(idleMs)} ago`}>
-        {fmtElapsed(idleMs)} idle
-      </span>
+      {idleMs >= 10_000 && (
+        <span className="hb-idle" title={`Last agent message ${fmtElapsed(idleMs)} ago`}>
+          {fmtElapsed(idleMs)} idle
+        </span>
+      )}
       {phase && PHASE_LABEL[phase] && (
         <span className={"hb-phase hb-phase-" + phase}>{PHASE_LABEL[phase]}</span>
       )}
@@ -1266,11 +1270,7 @@ function FilesPanel({ ws, files, notes, generations, artifacts, activeArtifactId
         <button className={"btn btn-primary agent-open-btn" + (agentOpen ? " on" : "")}
                 title={agentOpen ? "Close the agent panel" : "Open the agent panel"}
                 onClick={onToggleAgent}>
-          {(status === "running" || status === "queued")
-            ? <Spinner />
-            : status === "awaiting_user"
-              ? <Icon name="message-circle-question" />
-              : <Icon name="bot" />}
+          <Icon name="bot" />
           Agent
         </button>
       </div>
@@ -2124,7 +2124,7 @@ function AgentPanelBody({ ws, generation, busy, files, notes, onGenerate, onRepl
           </div>
           <div className="agent-status" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
             {hasActive
-              ? <><span className={"pdot " + (STATUS[status]?.dot || "s-idle") + " pulse"} style={{ width: 7, height: 7, borderRadius: 999, display: "inline-block" }} />{STATUS[status]?.label || status}</>
+              ? (STATUS[status]?.label || status)
               : <span style={{ opacity: 0.7 }}>idle</span>}
             {(() => {
               const m = (hasActive && generation?.model) || ws?.agent_model;
