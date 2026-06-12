@@ -1203,10 +1203,19 @@ textarea.field { resize: none; line-height: 1.5; }
 .pod-chip.active .chip-identicon { filter: brightness(1.28) saturate(1.15); }
 .chip-letters {
   position: relative; z-index: 1;
-  color: #fff; font-weight: 700; font-size: 13px;
-  letter-spacing: .02em; line-height: 1;
-  text-shadow: 0 1px 2px rgba(0,0,0,.9), 0 0 7px rgba(0,0,0,.65);
+  color: #fff; font-weight: 800; font-size: 12.5px;
+  letter-spacing: .01em; line-height: 1;
+  text-shadow: 0 1px 2px rgba(0,0,0,.85);
 }
+/* Quiet center: a soft dark pool under the glyphs so the letters sit
+   IN the tile instead of fighting the pattern. */
+.pod-chip::after {
+  content: ""; position: absolute; inset: 0; border-radius: 10px;
+  background: radial-gradient(circle at 50% 52%, rgba(8,8,10,.52) 0%, rgba(8,8,10,.28) 38%, transparent 68%);
+  pointer-events: none;
+}
+.pod-chip .chip-letters { z-index: 2; }
+.pod-chip .dot { z-index: 3; }
 .pod-chip.active .chip-letters, .pod-chip:hover .chip-letters { color: #fff; }
 .pod-chip .dot { z-index: 2; }
 .card-identicon {

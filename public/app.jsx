@@ -351,6 +351,11 @@ function useAccent() {
   return accent;
 }
 
+// Artifact paths come from the server as absolute host paths — on
+// Windows that means backslashes, which every regex/split here would
+// otherwise miss.
+function normPath(p) { return String(p || "").replace(/\\/g, "/"); }
+
 function icHash(str) {
   let h = 2166136261;
   for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
@@ -689,7 +694,7 @@ function PodCard({ ws, onOpen, onMenu }) {
           <div className="pod-artifact">
             <Icon name="monitor-play" style={{ width: 15, height: 15, color: "var(--wp-accent)" }} />
             <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 150 }}>
-              {latestGen.artifact_path.split("/").pop()}
+              {normPath(latestGen.artifact_path).split("/").pop()}
             </span>
             {latestGen.artifact_version && (
               <span className="vtag">v{latestGen.artifact_version}</span>
@@ -1337,17 +1342,17 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted })
   if (!cur || !cur.artifact_path) return null;
   const latestId = artifacts[0]?.id;
   const isLatest = cur.id === latestId;
-  const name = cur.artifact_path.split("/").pop();
+  const name = normPath(cur.artifact_path).split("/").pop();
   // HTML artifacts get a live preview iframe — the file IS the deck.
   // Derive the /preview/* URL by stripping the workspaces/ prefix from
   // the absolute path. Anything not matching .html falls through.
   const isHtml = /\.html$/i.test(name);
   let previewUrl = null;
   if (isHtml) {
-    const m = cur.artifact_path.match(/\/workspaces\/(.+)$/);
+    const m = normPath(cur.artifact_path).match(/\/workspaces\/(.+)$/);
     if (m) previewUrl = `/preview/${m[1]}`;
   }
-  const wsSlug = ((cur.artifact_path || "").match(/\/workspaces\/([^/]+)\//) || [])[1] || null;
+  const wsSlug = (normPath(cur.artifact_path).match(/\/workspaces\/([^/]+)\//) || [])[1] || null;
   return (
     <div className="artifact fade-up">
       {previewUrl && (
@@ -2166,7 +2171,7 @@ function ExportButton({ genId, kind, onDone }) {
     } finally { setBusy(false); }
   };
   if (done) {
-    const dlName = done.path.split("/").pop();
+    const dlName = normPath(done.path).split("/").pop();
     return (
       <a className="btn btn-ghost" download={dlName}
          href={`/api/generations/${genId}/download-${kind}`} title={meta.title}>
