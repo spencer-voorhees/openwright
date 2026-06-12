@@ -2286,6 +2286,14 @@ function ChatMessage({ msg }) {
       </div>
     );
   }
+  if (/^Run failed:/.test(c)) {
+    return (
+      <div className="msg-error fade-up">
+        <Icon name="alert-octagon" />
+        <Markdown text={msg.content} className="agent-text" />
+      </div>
+    );
+  }
   return (
     <div className="msg-agent fade-up">
       <Markdown text={msg.content} className="agent-text" />

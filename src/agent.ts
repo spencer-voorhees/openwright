@@ -69,6 +69,7 @@ export function reapStrandedGenerations(): number {
   ).all() as any[];
   for (const r of rows) {
     setStatus(r.id, "errored", { error: "stranded by server restart", completed_at: Date.now() });
+    appendMessage(r.id, "agent", "Run failed: the server restarted while this run was in flight. Progress on disk is preserved; hit Generate to continue.");
   }
   return rows.length;
 }

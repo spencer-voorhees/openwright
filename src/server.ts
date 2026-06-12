@@ -477,6 +477,8 @@ async function kickoffGeneration(slug: string, req: Request) {
     console.error("[generation]", gen_id, e);
     db.run("UPDATE generations SET status='errored', error=?, completed_at=? WHERE id=?",
            [String(e?.message || e), Date.now(), gen_id]);
+    db.run("INSERT INTO messages(generation_id, role, content, ts) VALUES(?, 'agent', ?, ?)",
+           [gen_id, `Run failed: ${String(e?.message || e).slice(0, 300)}`, Date.now()]);
   });
   return json({ generation_id: gen_id, artifact_id: art_id }, 202);
 }
@@ -563,6 +565,8 @@ async function replyToAgent(gen_id: string, req: Request) {
       console.error("[reply]", gen_id, e);
       db.run("UPDATE generations SET status='errored', error=?, completed_at=? WHERE id=?",
              [String(e?.message || e), Date.now(), g.id]);
+      db.run("INSERT INTO messages(generation_id, role, content, ts) VALUES(?, 'agent', ?, ?)",
+             [g.id, `Run failed: ${String(e?.message || e).slice(0, 300)}`, Date.now()]);
     });
   }
   return json({ ok: true });
