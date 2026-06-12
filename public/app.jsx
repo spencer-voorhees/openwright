@@ -186,9 +186,14 @@ const STATUS = {
   running:       { pill: "is-generating", dot: "s-generating", label: "Generating" },
   awaiting_user: { pill: "is-input",      dot: "s-input",      label: "Needs input" },
   done:          { pill: "is-ready",      dot: "s-ready",      label: "Ready" },
+  // Finished within the last 30 minutes — the "something new since
+  // you looked" signal. Rail dot and card pill share it; both go
+  // quiet when it ages out.
+  fresh:         { pill: "is-ready",      dot: "s-ready",      label: "Updated" },
   errored:       { pill: "is-error",      dot: "s-error",      label: "Errored" },
   idle:          { pill: "",              dot: "s-idle",       label: "Idle" },
 };
+const FRESH_WINDOW_MS = 30 * 60_000;
 
 // ─── workspace status derivation ──────────────────────────────
 // Given a workspace's generation rows, pick the single status the
@@ -200,8 +205,9 @@ function podStatus(generations) {
   );
   if (active) return active.status;
   const top = generations[0];
-  if (top.status === "errored") return "errored";
-  if (top.status === "done")    return "done";
+  const recent = top.completed_at && Date.now() - top.completed_at < FRESH_WINDOW_MS;
+  if (top.status === "errored") return recent ? "errored" : "idle";
+  if (top.status === "done")    return recent ? "fresh" : "idle";
   return "idle";
 }
 
@@ -436,16 +442,13 @@ function RailLogo() {
 }
 
 function railStatus(ws) {
-  const RECENT = 30 * 60_000;
   // Active gen wins.
   if (ws.active_gen_status === "running" || ws.active_gen_status === "queued") return "running";
   if (ws.active_gen_status === "awaiting_user") return "awaiting_user";
-  // A recently-errored LATEST run must never hide behind an older
-  // success — error outranks the green light.
-  if (ws.latest_gen_status === "errored" && ws.latest_gen_at && Date.now() - ws.latest_gen_at < RECENT) return "errored";
-  // Recent successful output lights the chip green so a fresh deck
-  // is visible at a glance after a run finishes.
-  if (ws.latest_gen_status === "done" && ws.latest_done_at && Date.now() - ws.latest_done_at < RECENT) return "done";
+  // Same vocabulary as the cards (podStatus): recent error outranks
+  // recent success; both age out after the fresh window.
+  if (ws.latest_gen_status === "errored" && ws.latest_gen_at && Date.now() - ws.latest_gen_at < FRESH_WINDOW_MS) return "errored";
+  if (ws.latest_gen_status === "done" && ws.latest_done_at && Date.now() - ws.latest_done_at < FRESH_WINDOW_MS) return "fresh";
   return "idle";
 }
 
@@ -755,9 +758,9 @@ function PodCard({ ws, onOpen, onMenu }) {
         {extra > 0 && <div className="pod-more-files">+{extra} more</div>}
       </div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-        {/* Steady-state "Ready" is noise — the pill earns its place
-            only for exceptions: working, waiting on input, errored. */}
-        {status !== "done" && <StatusPill status={status} />}
+        {/* Pills show exceptions plus the 30-minute fresh window —
+            exactly the states the rail dot shows. */}
+        <StatusPill status={status} />
         {ws.active_gen_id && (
           <Heartbeat
             startedAt={ws.active_gen_started_at}
