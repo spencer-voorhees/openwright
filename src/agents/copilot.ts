@@ -22,23 +22,48 @@ import { resolveBin } from "./resolve-bin";
 const COPILOT_BIN = resolveBin("copilot", process.env.OPENWRIGHT_COPILOT_BIN);
 const COPILOT_MODEL = process.env.OPENWRIGHT_COPILOT_MODEL || "";
 
-// Classify a stdout line for the chat panel. Copilot's -p mode prints
-// prose plus tool-activity lines; the markers below are tolerant — an
-// unrecognized line is treated as prose.
-function classifyLine(line: string): { kind: "text" | "tool" | "system"; text: string } | null {
-  const t = line.replace(/\x1b\[[0-9;]*m/g, "").trimEnd(); // strip stray ANSI
-  if (!t.trim()) return null;
-  // Tool/activity lines (✓/✗/● bullets, "Ran", "Created", "Edited"…)
-  if (/^[✓✗•●▪◦]\s/.test(t) || /^\s*(Ran|Created|Edited|Read|Searched|Wrote)\b/.test(t)) {
-    return { kind: "tool", text: `[copilot] ${t.trim()}` };
-  }
-  if (/^(Error|Warning):/i.test(t)) return { kind: "system", text: t.trim() };
-  return { kind: "text", text: t };
+// Classify copilot's stdout for the chat panel. The CLI draws each
+// tool action as a small tree:
+//     ● Read deck-v6.html
+//     │ artifacts/untitled/deck-v6.html
+//     └ 80 lines read
+// Emitting those as three separate lines rendered as broken prose —
+// the classifier is stateful and coalesces a tree into ONE tool
+// event in the app's [tool:Verb] format.
+type Ev = { kind: "text" | "tool" | "system"; text: string };
+export function makeClassifier(emit: (ev: Ev) => void) {
+  let pending: { verb: string; rest: string; result: string } | null = null;
+  const flush = () => {
+    if (!pending) return;
+    const tail = pending.result ? ` · ${pending.result}` : "";
+    emit({ kind: "tool", text: `[tool:${pending.verb}] ${pending.rest}${tail}`.trim() });
+    pending = null;
+  };
+  const line = (raw: string) => {
+    const t = raw.replace(/\x1b\[[0-9;]*m/g, "").trimEnd();
+    if (!t.trim()) return;
+    const header = t.match(/^\s*[✓✗•●▪◦]\s+(\S+)\s*(.*)$/) || t.match(/^\s*(Ran|Created|Edited|Read|Searched|Wrote)\b\s*(.*)$/);
+    if (header) {
+      flush();
+      pending = { verb: header[1]!, rest: header[2] || "", result: "" };
+      return;
+    }
+    if (/^\s*[│├|]/.test(t)) {
+      // path/detail continuation — the header already names the file
+      return;
+    }
+    const result = t.match(/^\s*[└╰]\s*(.*)$/);
+    if (result) {
+      if (pending) { pending.result = result[1] || ""; flush(); }
+      return;
+    }
+    flush();
+    if (/^(Error|Warning):/i.test(t)) emit({ kind: "system", text: t.trim() });
+    else emit({ kind: "text", text: t });
+  };
+  return { line, flush };
 }
 
-// Best-effort identity: the CLI prints the login during the device
-// flow but offers no status command; some builds persist it under
-// ~/.copilot. Absence is fine — the chip just stays generic.
 function copilotUser(): string | null {
   try {
     const dir = join(homedir(), ".copilot");
@@ -151,6 +176,12 @@ export const copilotAdapter: AgentAdapter = {
     const textParts: string[] = [];
 
     const consume = async (stream: ReadableStream, isErr: boolean) => {
+      const cls = makeClassifier((ev) => {
+        if (isErr && ev.kind === "text") ev.kind = "system";
+        if (ev.kind === "text") textParts.push(ev.text);
+        if (/no authentication|not authenticated/i.test(ev.text)) authError = true;
+        opts.onEvent(ev);
+      });
       const reader = stream.getReader();
       const dec = new TextDecoder();
       let buf = "";
@@ -161,19 +192,10 @@ export const copilotAdapter: AgentAdapter = {
         buf += dec.decode(value, { stream: true });
         const lines = buf.split("\n");
         buf = lines.pop() || "";
-        for (const line of lines) {
-          const ev = classifyLine(line);
-          if (!ev) continue;
-          if (isErr && ev.kind === "text") ev.kind = "system";
-          if (ev.kind === "text") textParts.push(ev.text);
-          if (/no authentication|not authenticated/i.test(ev.text)) authError = true;
-          opts.onEvent(ev);
-        }
+        for (const line of lines) cls.line(line);
       }
-      if (buf.trim()) {
-        const ev = classifyLine(buf);
-        if (ev) { if (ev.kind === "text") textParts.push(ev.text); opts.onEvent(ev); }
-      }
+      if (buf.trim()) cls.line(buf);
+      cls.flush();
     };
 
     try {
