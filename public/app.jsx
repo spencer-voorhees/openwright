@@ -1433,6 +1433,21 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted, e
   // in instead. Reset whenever the underlying generation changes (the
   // key remounts the iframe, so onLoad fires again).
   const [previewLoaded, setPreviewLoaded] = useState(false);
+  // The expand toggle only earns a place when expansion would
+  // meaningfully widen the card (the standard measure is 1472px wide
+  // inside 44px gutters) — a breakpoint guess showed it on laptops
+  // where it visibly did nothing.
+  const artifactRef = useRef(null);
+  const [canExpand, setCanExpand] = useState(false);
+  useEffect(() => {
+    const el = artifactRef.current?.parentElement;
+    if (!el) return;
+    const measure = () => setCanExpand(el.clientWidth - 88 - 1472 > 192);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   // Collapsing the tall preview brings uploads/files above the fold;
   // remembered per browser.
   const [previewHidden, setPreviewHidden] = useState(() => localStorage.getItem("ow-preview-hidden") === "1");
@@ -1494,7 +1509,7 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted, e
   }
   const wsSlug = (normPath(cur.artifact_path).match(/\/workspaces\/([^/]+)\//) || [])[1] || null;
   return (
-    <div className={"artifact fade-up" + (expanded ? " expanded" : "")}>
+    <div ref={artifactRef} className={"artifact fade-up" + (expanded ? " expanded" : "")}>
       {previewUrl && !previewHidden && (
         <div className="artifact-preview">
           {!previewLoaded && <div className="preview-loading"><Spinner style={{ width: 22, height: 22 }} /></div>}
@@ -1513,11 +1528,13 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted, e
                           onAdded={() => setCommentsBump((b) => b + 1)} />
           )}
           <div className="preview-controls">
-            <button className="pc-btn expand-toggle"
-                    title={expanded ? "Fit to the standard width" : "Expand to the full window"}
-                    onClick={onToggleExpanded}>
-              <Icon name={expanded ? "minimize-2" : "maximize-2"} />
-            </button>
+            {(canExpand || expanded) && (
+              <button className="pc-btn expand-toggle"
+                      title={expanded ? "Fit to the standard width" : "Expand to the full window"}
+                      onClick={onToggleExpanded}>
+                <Icon name={expanded ? "minimize-2" : "maximize-2"} />
+              </button>
+            )}
             <button className="pc-btn"
                     title="Hide the deck preview"
                     onClick={togglePreview}>
