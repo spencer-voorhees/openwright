@@ -1462,6 +1462,18 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted })
             <QuickComment artifactId={cur.artifact_id} slideIndex={curSlide}
                           onAdded={() => setCommentsBump((b) => b + 1)} />
           )}
+          <div className="preview-controls">
+            <button className="pc-btn expand-toggle"
+                    title={expanded ? "Fit to the standard width" : "Expand to the full window"}
+                    onClick={toggleExpanded}>
+              <Icon name={expanded ? "minimize-2" : "maximize-2"} />
+            </button>
+            <button className="pc-btn"
+                    title="Hide the deck preview"
+                    onClick={togglePreview}>
+              <Icon name="chevron-up" />
+            </button>
+          </div>
         </div>
       )}
       <div className="artifact-head">
@@ -1472,18 +1484,11 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted })
           </div>
           <div className="artifact-sub">HTML · run #{cur.id} · {fmtTime(cur.completed_at)}{isLatest ? "" : " · viewing older version"}</div>
         </div>
-        {previewUrl && (
-          <button className="icon-btn preview-toggle expand-toggle"
-                  title={expanded ? "Fit the card to the standard width" : "Expand the card to the full window"}
-                  onClick={toggleExpanded}>
-            <Icon name={expanded ? "minimize-2" : "maximize-2"} />
-          </button>
-        )}
-        {previewUrl && (
+        {previewUrl && previewHidden && (
           <button className="icon-btn preview-toggle"
-                  title={previewHidden ? "Show the deck preview" : "Hide the deck preview"}
+                  title="Show the deck preview"
                   onClick={togglePreview}>
-            <Icon name={previewHidden ? "chevron-down" : "chevron-up"} />
+            <Icon name="chevron-down" />
           </button>
         )}
         {cur.artifact_id && <CommentsSection artifactId={cur.artifact_id} wsSlug={wsSlug}
@@ -1535,7 +1540,7 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted })
           {isHtml && previewUrl && (
             <button className="btn btn-ghost"
                     onClick={() => {
-                      const ifr = document.querySelector(`iframe[src="${previewUrl}"]`);
+                      const ifr = previewRef.current;
                       if (ifr?.requestFullscreen) {
                         ifr.requestFullscreen().catch(() => {
                           window.open(previewUrl, "_blank", "noopener,noreferrer");
@@ -1551,7 +1556,7 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted })
           {isHtml && previewUrl && (
             <button className={"btn" + (editing ? " btn-primary" : " btn-ghost")}
                     onClick={() => {
-                      const ifr = document.querySelector(`iframe[src="${previewUrl}"]`);
+                      const ifr = previewRef.current;
                       if (!ifr?.contentWindow) return;
                       const next = !editing;
                       ifr.contentWindow.postMessage(
@@ -1567,7 +1572,7 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted })
               <button className="btn btn-primary edits-save-pulse"
                       disabled={saving}
                       onClick={async () => {
-                        const ifr = document.querySelector(`iframe[src="${previewUrl}"]`);
+                        const ifr = previewRef.current;
                         if (!ifr?.contentWindow) return;
                         setSaving(true);
                         const onMsg = async (e) => {
@@ -1597,7 +1602,7 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted })
                         if (!confirm("Discard all unsaved edits? The deck will reload to its last saved version.")) return;
                         // Reloading the iframe reverts every contentEditable
                         // change in light DOM and pulls the file fresh.
-                        const ifr = document.querySelector(`iframe[src="${previewUrl}"]`);
+                        const ifr = previewRef.current;
                         if (ifr) ifr.src = previewUrl + (previewUrl.includes("?") ? "&" : "?") + "discard=" + Date.now();
                         setEditing(false);
                         setEditsDirty(false);
@@ -1606,16 +1611,12 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted })
               </button>
             </>
           )}
-          {isHtml && (
-            <>
-              <ExportButton genId={cur.id} kind="pdf" onDone={onRefresh} />
-              <ExportButton genId={cur.id} kind="pptx" onDone={onRefresh} />
-              <ExportButton genId={cur.id} kind="pptx-image" onDone={onRefresh} />
-            </>
+          {isHtml && <ExportMenu genId={cur.id} onDone={onRefresh} />}
+          {!isHtml && (
+            <a className="btn btn-ghost" href={`/api/artifacts/${cur.id}`}>
+              <Icon name="download" /> Download
+            </a>
           )}
-          <a className="btn btn-ghost" href={`/api/artifacts/${cur.id}`}>
-            <Icon name="download" /> Download
-          </a>
         </div>
       </div>
     </div>
@@ -2277,6 +2278,35 @@ function ChatMessage({ msg }) {
 // ═══════════════════════════════════════════════════════════════
 // DESIGN SYSTEMS — workspace-agnostic CSS bundles, editable
 // ═══════════════════════════════════════════════════════════════
+
+// All export targets under one button — six peer buttons in the bar
+// read as noise; one Export menu matches every editor users know.
+function ExportMenu({ genId, onDone }) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [open]);
+  return (
+    <div className="vsel" onClick={(e) => e.stopPropagation()}>
+      <button className="btn btn-ghost" onClick={() => setOpen((o) => !o)}>
+        <Icon name="file-output" /> Export <Icon name="chevron-down" style={{ width: 12, height: 12 }} />
+      </button>
+      {open && (
+        <div className="vhist export-menu">
+          <ExportButton genId={genId} kind="pdf" onDone={onDone} />
+          <ExportButton genId={genId} kind="pptx" onDone={onDone} />
+          <ExportButton genId={genId} kind="pptx-image" onDone={onDone} />
+          <a className="btn btn-ghost" href={`/api/artifacts/${genId}`}>
+            <Icon name="download" /> HTML source
+          </a>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function ExportButton({ genId, kind, onDone }) {
   const [busy, setBusy] = useState(false);

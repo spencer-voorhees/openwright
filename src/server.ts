@@ -772,8 +772,11 @@ async function exportPptxFromHtml(gen_id: string, mode: "dom" | "image" = "dom")
 // which workspace and artifact they belong to. Strips the "untitled"
 // artifact slug since it's the default and noise.
 function exportFilename(artifact_path: string, kind: string): string {
-  const m = artifact_path.match(/\/workspaces\/([^/]+)\/artifacts\/([^/]+)\/([^/]+)$/);
-  const base = artifact_path.split("/").pop()!;
+  // Windows paths arrive with backslashes — normalize first or the
+  // whole path collapses into the filename (C_Users... downloads).
+  const p = String(artifact_path).replace(/\\/g, "/");
+  const m = p.match(/\/workspaces\/([^/]+)\/artifacts\/([^/]+)\/([^/]+)$/);
+  const base = p.split("/").pop()!;
   if (!m) return base;
   const [, wsSlug, artSlug, file] = m;
   const stem = file.replace(/\.[^/.]+$/, "");
