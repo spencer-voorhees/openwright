@@ -33,10 +33,12 @@ bun start            # http://localhost:8090
 Windows (PowerShell):
 
 ```powershell
-git clone https://github.com/spencer-voorhees/openpod; cd openpod
-powershell -ExecutionPolicy Bypass -File setup.ps1   # add -Yes for hands-off
+irm https://raw.githubusercontent.com/spencer-voorhees/openpod/main/install.ps1 | iex
 bun start
 ```
+
+Or from a clone: `powershell -ExecutionPolicy Bypass -File setup.ps1`
+(add `-Yes` for hands-off).
 
 Both wizards are idempotent and touch nothing outside the repo,
 `~/.bun`, and `~/.local`. They detect installed agent CLIs, offer to
