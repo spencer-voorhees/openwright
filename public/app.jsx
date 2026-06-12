@@ -925,7 +925,13 @@ function WorkspaceView({ slug, wsTab, setWsTab, onBack, onChange }) {
         </button>
         <button className={wsTab === "agent" ? "on" : ""}
                 onClick={() => setWsTab(wsTab === "agent" ? "files" : "agent")}>
-          <Icon name="bot" /> Agent
+          {(() => {
+            const st = (generations.find((g) =>
+              ["queued", "running", "awaiting_user"].includes(g.status)) || {}).status;
+            return st === "running" || st === "queued" ? <Spinner />
+              : st === "awaiting_user" ? <Icon name="message-circle-question" />
+              : <Icon name="bot" />;
+          })()} Agent
         </button>
       </div>
       <div className="ws-main">
@@ -1245,9 +1251,21 @@ function FilesPanel({ ws, files, notes, generations, artifacts, activeArtifactId
         </button>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="crumb">
-            <a onClick={onBack}>Workspaces</a>
-            <Icon name="chevron-right" style={{ width: 13, height: 13 }} />
+            <a className="crumb-trail" onClick={onBack}>Workspaces</a>
+            <Icon name="chevron-right" className="crumb-trail" style={{ width: 13, height: 13 }} />
             <span className="cur">{ws.name}</span>
+            <span className="crumb-status">
+              <StatusPill status={status} />
+              {(() => {
+                const active = generations.find((g) =>
+                  g.status === "running" || g.status === "queued" || g.status === "awaiting_user");
+                if (!active) return null;
+                return <Heartbeat
+                  startedAt={active.started_at}
+                  lastMessageAt={active.last_message_at}
+                  phase={active.phase} />;
+              })()}
+            </span>
             <span className="ws-settings">
               <ArtifactSelector ws={ws} artifacts={artifacts || []}
                                 activeArtifactId={activeArtifactId}
@@ -1257,20 +1275,14 @@ function FilesPanel({ ws, files, notes, generations, artifacts, activeArtifactId
             </span>
           </div>
         </div>
-        <StatusPill status={status} />
-        {(() => {
-          const active = generations.find((g) =>
-            g.status === "running" || g.status === "queued" || g.status === "awaiting_user");
-          if (!active) return null;
-          return <Heartbeat
-            startedAt={active.started_at}
-            lastMessageAt={active.last_message_at}
-            phase={active.phase} />;
-        })()}
         <button className={"btn btn-primary agent-open-btn" + (agentOpen ? " on" : "")}
                 title={agentOpen ? "Close the agent panel" : "Open the agent panel"}
                 onClick={onToggleAgent}>
-          <Icon name="bot" />
+          {(status === "running" || status === "queued")
+            ? <Spinner />
+            : status === "awaiting_user"
+              ? <Icon name="message-circle-question" />
+              : <Icon name="bot" />}
           Agent
         </button>
       </div>
@@ -2124,7 +2136,7 @@ function AgentPanelBody({ ws, generation, busy, files, notes, onGenerate, onRepl
           </div>
           <div className="agent-status" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
             {hasActive
-              ? (STATUS[status]?.label || status)
+              ? <>{(status === "running" || status === "queued") && <Spinner style={{ width: 11, height: 11 }} />} {STATUS[status]?.label || status}</>
               : <span style={{ opacity: 0.7 }}>idle</span>}
             {(() => {
               const m = (hasActive && generation?.model) || ws?.agent_model;
