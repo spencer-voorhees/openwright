@@ -1006,10 +1006,10 @@ function WorkspaceSettingsButton({ ws, onChange, runActive }) {
               <Icon name="bot" />
               <span>Agent</span>
             </div>
-            <div className="ws-settings-control">
+            <div className="ws-settings-control" style={{ flexDirection: "column", alignItems: "stretch" }}>
               <InlineAgentSelect ws={ws} onChange={onChange} />
               {runActive && (
-                <span style={{ fontSize: 10.5, color: "var(--wp-warn)", display: "block", marginTop: 4 }}>
+                <span style={{ fontSize: 10.5, color: "var(--wp-warn)", marginTop: 6, maxWidth: 220, lineHeight: 1.45 }}>
                   A run is active: switching takes effect on the agent's next turn
                   (its next reply or restart), not mid-thought.
                 </span>
