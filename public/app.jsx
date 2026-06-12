@@ -889,7 +889,9 @@ function WorkspaceView({ slug, wsTab, setWsTab, onBack, onChange }) {
                     onSelectArtifact={(id) => { setActiveArtifactId(id); setActiveGen(null); }}
                     onBack={onBack} onChange={refresh}
                     onActivate={(id) => setActiveGen(id)}
-                    onOpenAgent={openAgent} />
+                    onOpenAgent={openAgent}
+                    agentOpen={drawerOpen}
+                    onToggleAgent={() => (drawerOpen ? closeAgent() : openAgent())} />
       </div>
       <AgentDrawer
         ws={ws} generation={activeGenRow}
@@ -1144,7 +1146,8 @@ function ArtifactSelector({ ws, artifacts, activeArtifactId, onSelect, onChange 
 }
 
 function FilesPanel({ ws, files, notes, generations, artifacts, activeArtifactId,
-                       onSelectArtifact, onBack, onChange, onActivate, onOpenAgent }) {
+                       onSelectArtifact, onBack, onChange, onActivate, onOpenAgent,
+                       agentOpen, onToggleAgent }) {
   const [over, setOver] = useState(false);
   const fileInput = useRef(null);
   const [noteModal, setNoteModal] = useState(false);
@@ -1203,6 +1206,16 @@ function FilesPanel({ ws, files, notes, generations, artifacts, activeArtifactId
             lastMessageAt={active.last_message_at}
             phase={active.phase} />;
         })()}
+        <button className={"btn btn-ghost agent-open-btn" + (agentOpen ? " on" : "")}
+                title={agentOpen ? "Close the agent panel" : "Open the agent panel"}
+                onClick={onToggleAgent}>
+          <Icon name="bot" />
+          Agent
+          {(status === "running" || status === "queued" || status === "awaiting_user") && (
+            <span className={"pdot " + (STATUS[status]?.dot || "s-idle") + " pulse"}
+                  style={{ width: 7, height: 7, borderRadius: 999, display: "inline-block" }} />
+          )}
+        </button>
       </div>
       <div className="files-body"
         onDragOver={(e) => { e.preventDefault(); setOver(true); }}
@@ -1932,16 +1945,8 @@ function NoteModal({ slug, onClose, onSaved }) {
 function AgentDrawer({ ws, generation, open, onOpen, onClose, busy, files, notes, onGenerate, onReply, onSteer, hasPrior }) {
   const status = generation?.status || "idle";
   const hasActive = generation && (status === "running" || status === "queued" || status === "awaiting_user");
-  const showHandlePulse = hasActive;
-  const handleDot = STATUS[status]?.dot || "s-idle";
   return (
     <>
-      <button className={"agent-handle" + (open ? " hidden" : "") + (showHandlePulse ? " busy" : "")}
-        onClick={onOpen}
-        title={hasActive ? `Agent · ${STATUS[status]?.label || status}` : "Open agent"}>
-        {showHandlePulse && <span className={"pdot " + handleDot + " pulse"} style={{ width: 8, height: 8, borderRadius: 999, display: "inline-block" }} />}
-        <Icon name="bot" className="handle-bot" style={{ width: 22, height: 22, color: "var(--wp-accent)" }} />
-      </button>
       <div className={"agent-drawer" + (open ? " open" : "")}>
         <AgentPanelBody
           ws={ws} generation={generation} busy={busy}

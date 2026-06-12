@@ -267,20 +267,6 @@ a { color: var(--wp-link); }
 }
 .agent-drawer.open { transform: translateX(0); }
 
-.agent-handle {
-  position: absolute; top: 50%; right: 0; transform: translateY(-50%);
-  width: 28px; height: 64px; border-radius: 14px 0 0 14px;
-  background: var(--wp-elev); border: 1px solid var(--wp-border);
-  border-right: none;
-  display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
-  color: var(--wp-fg-muted); cursor: pointer;
-  transition: width var(--um-dur-base) var(--um-ease-out), background var(--um-dur-fast), border-color var(--um-dur-fast), color var(--um-dur-fast);
-  z-index: 25; padding: 0;
-}
-.agent-handle:hover { width: 36px; background: var(--wp-elev-2); border-color: var(--wp-border-strong); color: var(--wp-fg); }
-.agent-handle.hidden { display: none; }
-.agent-handle.busy { border-color: var(--wp-accent-line); }
-.agent-handle .handle-bot { width: 18px; height: 18px; color: var(--wp-accent); }
 
 /* Reserve a slim right gutter in the workspace so the handle never overlays content. */
 .ws .files-panel .files-body { padding-right: 44px; }
@@ -976,8 +962,7 @@ textarea.field { resize: none; line-height: 1.5; }
   .ws-tabs button.on { background: var(--wp-elev-2); color: var(--wp-fg); }
   .files-panel, .agent-panel, .agent-drawer, .ws-main { flex: 1 1 auto !important; width: 100% !important; min-width: 0; min-height: 0; border-right: none; }
   /* On mobile, drawer becomes an inline panel switched by the tab strip */
-  .agent-handle { display: none; }
-  .agent-drawer { position: relative; transform: none !important; transition: none;
+    .agent-drawer { position: relative; transform: none !important; transition: none;
                   box-shadow: none; border-left: none; }
   .ws-tab-files .agent-drawer, .ws-tab-files .agent-panel { display: none; }
   .ws-tab-agent .ws-main { display: none; }
@@ -1246,3 +1231,11 @@ select option { background-color: #161618; color: #f5f5f7; }
 }
 .set-agent-verify:hover { color: var(--wp-fg); border-color: var(--wp-border-strong); }
 .set-agent-verify:disabled { opacity: .6; cursor: default; }
+
+/* Header toggle for the agent panel */
+.agent-open-btn { gap: 7px; }
+.agent-open-btn.on { color: var(--wp-accent); border-color: var(--wp-accent-line); background: var(--wp-accent-tint); }
+@media (max-width: 760px) {
+  /* Mobile has the Files/Agent tab bar — the header button is noise there. */
+  .agent-open-btn { display: none; }
+}
