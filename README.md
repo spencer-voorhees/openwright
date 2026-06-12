@@ -1,4 +1,4 @@
-# openwright
+# OpenWright
 
 [![install](https://github.com/spencer-voorhees/openwright/actions/workflows/install.yml/badge.svg)](https://github.com/spencer-voorhees/openwright/actions/workflows/install.yml)
 
