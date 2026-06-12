@@ -1193,7 +1193,11 @@ textarea.field { resize: none; line-height: 1.5; }
   transition: border-color .15s ease, background .15s ease, transform .15s ease;
 }
 .set-agent:hover { border-color: var(--wp-border-strong); transform: translateY(-1px); }
-.set-agent.active { border-color: var(--wp-accent); background: color-mix(in srgb, var(--wp-accent) 6%, var(--wp-elev)); }
+.set-agent.active {
+  border-color: var(--um-ultra);
+  box-shadow: 0 0 0 1px var(--um-ultra);
+  background: color-mix(in srgb, var(--um-ultra) 6%, var(--wp-elev));
+}
 .set-agent.unavailable { opacity: .68; }
 .set-agent-top { display: flex; align-items: center; gap: 8px; }
 .set-agent-top svg { width: 14px; height: 14px; margin-left: auto; color: var(--wp-accent); }
