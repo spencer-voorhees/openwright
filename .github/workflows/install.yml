@@ -1,0 +1,49 @@
+# Smoke-tests the zero-prerequisite install on all three platforms:
+# wizard (hands-off), CLI start, API answers, design system seeded.
+name: install
+on:
+  push:
+    branches: [main]
+    paths: [setup.sh, setup.ps1, install.sh, install.ps1, bin/**, src/**, package.json, .github/workflows/install.yml]
+  workflow_dispatch:
+
+jobs:
+  unix:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: setup wizard (hands-off)
+        run: bash setup.sh -y < /dev/null
+      - name: start + probe
+        run: |
+          export PATH="$HOME/.bun/bin:$HOME/.local/bin:$PATH"
+          "$HOME/.bun/bin/bun" bin/openwright.ts start --no-open
+          curl -fsS http://127.0.0.1:8090/api/workspaces
+          curl -fsS http://127.0.0.1:8090/api/design-systems | grep -q oneshot
+          curl -fsS http://127.0.0.1:8090/api/agents > /dev/null
+          "$HOME/.bun/bin/bun" bin/openwright.ts status
+          "$HOME/.bun/bin/bun" bin/openwright.ts stop
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: setup wizard (hands-off)
+        shell: powershell
+        run: powershell -ExecutionPolicy Bypass -File setup.ps1 -Yes
+      - name: start + probe
+        shell: powershell
+        run: |
+          $bun = Join-Path $env:USERPROFILE ".bun\bin\bun.exe"
+          & $bun bin/openwright.ts start --no-open
+          if ($LASTEXITCODE -ne 0) { Get-Content openwright.log -ErrorAction SilentlyContinue; Get-Content openwright.log.err -ErrorAction SilentlyContinue; exit 1 }
+          curl.exe -fsS http://127.0.0.1:8090/api/workspaces
+          curl.exe -fsS http://127.0.0.1:8090/api/design-systems | Select-String oneshot
+          & $bun bin/openwright.ts status
+          & $bun bin/openwright.ts stop
