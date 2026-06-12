@@ -101,6 +101,11 @@ CREATE TABLE IF NOT EXISTS comments (
 );
 CREATE INDEX IF NOT EXISTS idx_comments_artifact ON comments(artifact_id);
 
+CREATE TABLE IF NOT EXISTS settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_files_ws    ON files(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_gen_ws      ON generations(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_msg_gen     ON messages(generation_id);
@@ -248,3 +253,21 @@ export interface Generation { id: number; workspace_id: number; prompt?: string;
                                 artifact_path?: string; artifact_version?: number }
 export interface Message { id: number; generation_id: number; role: "agent" | "user";
                              content: string; ts: number }
+
+// ─── app settings ──────────────────────────────────────────────────
+// Global defaults (default agent engine/model for new workspaces).
+// OPENPOD_AGENT env seeds the engine default on first boot only;
+// after that the UI-set value wins.
+export function getSetting(key: string, fallback = ""): string {
+  const row = db.query("SELECT value FROM settings WHERE key = ?").get(key) as any;
+  return row ? String(row.value) : fallback;
+}
+
+export function setSetting(key: string, value: string) {
+  db.run("INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+    [key, value]);
+}
+
+if (!(db.query("SELECT 1 FROM settings WHERE key = 'default_agent_engine'").get())) {
+  setSetting("default_agent_engine", process.env.OPENPOD_AGENT || "claude");
+}

@@ -16,7 +16,7 @@
 //   GET    /api/files/:id                         (download a workspace file)
 import { mkdirSync, writeFileSync, statSync, unlinkSync, existsSync, readFileSync } from "node:fs";
 import { join, extname } from "node:path";
-import { db } from "./db";
+import { db, getSetting, setSetting } from "./db";
 import { startGeneration, postUserReply, postSteer, reapStrandedGenerations, stopGeneration, WORKSPACE_ROOT } from "./agent";
 import { ADAPTERS, DEFAULT_ENGINE } from "./agents/index";
 
@@ -228,9 +228,12 @@ async function createWorkspace(req: Request) {
     const first = db.query("SELECT id FROM design_systems ORDER BY id ASC LIMIT 1").get() as any;
     if (first) dsId = first.id;
   }
-  const agentEng = agent_engine && ADAPTERS.some((a) => a.id === agent_engine) ? agent_engine : DEFAULT_ENGINE;
-  db.run("INSERT INTO workspaces(slug, name, created_at, use_opus, validate, engine, theme, design_system_id, agent_engine) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)",
-         [slug, name.trim(), now, use_opus ? 1 : 0, validate === false ? 0 : 1, eng, th, dsId, agentEng]);
+  const settingEng = getSetting("default_agent_engine", DEFAULT_ENGINE);
+  const fallbackEng = ADAPTERS.some((a) => a.id === settingEng) ? settingEng : DEFAULT_ENGINE;
+  const agentEng = agent_engine && ADAPTERS.some((a) => a.id === agent_engine) ? agent_engine : fallbackEng;
+  const agentModel = getSetting("default_agent_model", "");
+  db.run("INSERT INTO workspaces(slug, name, created_at, use_opus, validate, engine, theme, design_system_id, agent_engine, agent_model) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         [slug, name.trim(), now, use_opus ? 1 : 0, validate === false ? 0 : 1, eng, th, dsId, agentEng, agentModel]);
   workspaceDir(slug);
   return json({ workspace: workspaceBySlug(slug) }, 201);
 }
@@ -834,7 +837,34 @@ function route(req: Request, url: URL): Promise<Response> | Response {
     return (async () => {
       const out = [];
       for (const a of ADAPTERS) out.push({ id: a.id, label: a.label, models: a.models, ...(await a.available()) });
-      return json({ agents: out, default: DEFAULT_ENGINE });
+      const def = getSetting("default_agent_engine", DEFAULT_ENGINE);
+      return json({ agents: out, default: ADAPTERS.some((a) => a.id === def) ? def : DEFAULT_ENGINE });
+    })();
+  }
+  if (url.pathname === "/api/settings" && req.method === "GET") {
+    return json({
+      settings: {
+        default_agent_engine: getSetting("default_agent_engine", DEFAULT_ENGINE),
+        default_agent_model: getSetting("default_agent_model", ""),
+      },
+    });
+  }
+  if (url.pathname === "/api/settings" && req.method === "PATCH") {
+    return (async () => {
+      const body = await req.json() as { default_agent_engine?: string; default_agent_model?: string };
+      if (body.default_agent_engine !== undefined) {
+        if (!ADAPTERS.some((a) => a.id === body.default_agent_engine)) return err("unknown engine");
+        setSetting("default_agent_engine", body.default_agent_engine);
+      }
+      if (body.default_agent_model !== undefined) {
+        setSetting("default_agent_model", String(body.default_agent_model || "").trim());
+      }
+      return json({
+        settings: {
+          default_agent_engine: getSetting("default_agent_engine", DEFAULT_ENGINE),
+          default_agent_model: getSetting("default_agent_model", ""),
+        },
+      });
     })();
   }
   if ((mt = m("/api/generations/(\\d+)/stop")) && req.method === "POST") return stopGen(mt[1]);

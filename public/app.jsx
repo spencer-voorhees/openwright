@@ -350,6 +350,75 @@ function Rail({ workspaces, activeSlug, view, onHome, onOpen, onNew, onOpenDesig
 // DASHBOARD
 // ═══════════════════════════════════════════════════════════════
 
+// App-level defaults: which engine/model new workspaces start with.
+function GlobalSettingsButton() {
+  const [open, setOpen] = useState(false);
+  const [agents, setAgents] = useState([]);
+  const [settings, setSettings] = useState(null);
+  useEffect(() => {
+    if (!open) return;
+    fetchJson("/api/agents").then((d) => setAgents(d.agents || [])).catch(() => {});
+    fetchJson("/api/settings").then((d) => setSettings(d.settings)).catch(() => {});
+    const close = () => setOpen(false);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [open]);
+  const save = async (patch) => {
+    const d = await patchJson("/api/settings", patch);
+    setSettings(d.settings);
+  };
+  const eng = settings?.default_agent_engine || "";
+  const engInfo = agents.find((a) => a.id === eng);
+  return (
+    <span style={{ position: "relative" }} onClick={(e) => e.stopPropagation()}>
+      <button className="icon-btn ws-settings-btn" title="App settings" onClick={() => setOpen((o) => !o)}>
+        <Icon name="settings" />
+      </button>
+      {open && (
+        <div className="ws-settings-pop" style={{ right: 0, left: "auto" }}>
+          <div className="ws-settings-row">
+            <div className="ws-settings-label">
+              <Icon name="bot" />
+              <span>Default agent</span>
+            </div>
+            <div className="ws-settings-control">
+              <select className="ws-settings-select" value={eng}
+                      onChange={(e) => save({ default_agent_engine: e.target.value })}>
+                {!settings && <option value="">loading…</option>}
+                {agents.map((a) => (
+                  <option key={a.id} value={a.id}>{a.label}{a.ok ? "" : " (not set up)"}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="ws-settings-row">
+            <div className="ws-settings-label">
+              <Icon name="sparkles" />
+              <span>Default model</span>
+            </div>
+            <div className="ws-settings-control">
+              <input className="ws-settings-select" type="text" list="global-models"
+                     placeholder="engine default"
+                     defaultValue={settings?.default_agent_model || ""}
+                     key={`gm-${eng}-${settings?.default_agent_model || ""}`}
+                     onBlur={(e) => {
+                       const v = e.target.value.trim();
+                       if (v !== (settings?.default_agent_model || "")) save({ default_agent_model: v });
+                     }} />
+              <datalist id="global-models">
+                {(engInfo?.models || []).filter(Boolean).map((m) => <option key={m} value={m} />)}
+              </datalist>
+            </div>
+          </div>
+          <div style={{ fontSize: 10.5, color: "var(--wp-fg-faint)", padding: "6px 10px 8px" }}>
+            Applied to new workspaces. Existing workspaces keep their own setting.
+          </div>
+        </div>
+      )}
+    </span>
+  );
+}
+
 function Dashboard({ workspaces, onOpen, onNew, onMenu }) {
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState("all");
@@ -367,11 +436,14 @@ function Dashboard({ workspaces, onOpen, onNew, onMenu }) {
       <div className="dash-inner">
         <div className="dash-head">
           <div>
-            <div className="eyebrow" style={{ marginBottom: 12 }}>WorkPod</div>
+            <div className="eyebrow" style={{ marginBottom: 12 }}>OpenPod</div>
             <h1 className="dash-title">Workspaces</h1>
             <p className="dash-sub">Each workspace is a sandbox on the host where the agent works — drop in files, notes, and context, then generate artifacts.</p>
           </div>
-          <button className="btn btn-primary" onClick={onNew}><Icon name="plus" /> New workspace</button>
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <GlobalSettingsButton />
+            <button className="btn btn-primary" onClick={onNew}><Icon name="plus" /> New workspace</button>
+          </div>
         </div>
         <div className="dash-tools">
           <div className="search">
