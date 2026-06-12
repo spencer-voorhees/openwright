@@ -1,5 +1,7 @@
 # openwright
 
+[![install](https://github.com/spencer-voorhees/openwright/actions/workflows/install.yml/badge.svg)](https://github.com/spencer-voorhees/openwright/actions/workflows/install.yml)
+
 Agent-built slide decks from a workspace of files. Drop in source material
 (markdown, PDFs, transcripts, CSVs), hit Generate, and an agent writes a
 single-file HTML deck rendered live in the app — exportable to PDF and to
