@@ -361,6 +361,7 @@ async function runAgentLoop(gen_id: number, workspace_id: number, sys: string, t
       appendMessage(gen_id, "agent", askContent);
       const userText = await new Promise<string>((resolve) => { pendingReply.set(gen_id, resolve); });
       if (stopRequests.has(gen_id)) { stopRequests.delete(gen_id); throw new Error("stopped by user"); }
+      if (userText.trim()) appendMessage(gen_id, "user", userText);
       setStatus(gen_id, "running");
       nextPrompt = `User replied: ${userText}\nContinue.`;
       continue;
@@ -400,6 +401,7 @@ export async function startGeneration(gen_id: number, opts: { fresh?: boolean } 
   const priorContext = fresh ? null : buildContinuationContext(artifact.id, gen_id, ws);
 
   setStatus(gen_id, "running", { started_at: Date.now() });
+  if (g.prompt) appendMessage(gen_id, "user", g.prompt);
   appendMessage(gen_id, "agent",
     `Reading ${files.length} file${files.length === 1 ? "" : "s"} from workspace "${ws.name}", artifact "${artifact.name}"… (engine: ${adapter.label}${priorContext ? ", continuing from prior run" : ""})`);
 
