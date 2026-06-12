@@ -12,3 +12,4 @@ __pycache__/
 exports/
 .openwright.pid
 openwright.log
+.openwright-launch.cmd

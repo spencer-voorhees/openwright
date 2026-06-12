@@ -73,13 +73,17 @@ async function start(foreground = false, noOpen = false) {
   let spawnedPid: number | null = null;
   if (platform() === "win32") {
     // cmd `start` detaches the server from this process tree —
-    // otherwise it can die when the CLI (or setup) exits.
-    const server = join(ROOT, "src", "server.ts");
-    Bun.spawnSync({
-      cmd: ["cmd", "/c",
-        `start "" /b cmd /c ""${process.execPath}" run "${server}" >> "${LOGFILE}" 2>&1"`],
-      cwd: ROOT,
-    });
+    // otherwise it dies when the CLI (or setup) exits. The command
+    // goes through a launcher .cmd file because nested quoting
+    // through spawn + cmd + start is unreliable.
+    const launcher = join(ROOT, ".openwright-launch.cmd");
+    writeFileSync(launcher, [
+      "@echo off",
+      `cd /d "${ROOT}"`,
+      `"${process.execPath}" run "${join(ROOT, "src", "server.ts")}" >> "${LOGFILE}" 2>&1`,
+      "",
+    ].join("\r\n"));
+    Bun.spawnSync({ cmd: ["cmd", "/c", "start", "openwright", "/min", launcher], cwd: ROOT });
   } else {
     const fd = openSync(LOGFILE, "a");
     const proc = Bun.spawn({
