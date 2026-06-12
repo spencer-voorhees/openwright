@@ -148,7 +148,12 @@ a { color: var(--wp-link); }
 }
 .pod-chip { width: 38px; height: 38px; flex: 0 0 38px; border-radius: 11px; background: var(--wp-elev); border: 1px solid var(--wp-border); color: var(--wp-fg-muted); font-family: var(--um-font-mono); font-weight: 600; font-size: 14px; display: grid; place-items: center; cursor: pointer; position: relative; transition: all var(--um-dur-fast) var(--um-ease-soft); }
 .pod-chip:hover { color: var(--wp-fg); border-color: var(--wp-border-strong); background: var(--wp-elev-2); }
-.pod-chip.active { color: var(--wp-accent); border-color: var(--wp-accent-line); background: var(--wp-accent-tint); }
+/* Active = accent ring floated off the tile by a rail-colored gap —
+   the old 1px translucent border vanished behind the gradient tile. */
+.pod-chip.active {
+  border-color: transparent;
+  box-shadow: 0 0 0 2px var(--wp-rail), 0 0 0 3.5px var(--um-ultra);
+}
 .pod-chip .dot { position: absolute; top: -2px; right: -2px; width: 9px; height: 9px; border-radius: 999px; border: 2px solid var(--wp-rail); }
 .rail-btn { width: 38px; height: 38px; flex: 0 0 38px; border-radius: 11px; border: 1px dashed var(--wp-border-strong); background: transparent; color: var(--wp-fg-muted); cursor: pointer; display: grid; place-items: center; transition: all var(--um-dur-fast) var(--um-ease-soft); }
 .rail-btn:hover { color: var(--wp-fg); border-color: var(--wp-accent-line); background: var(--wp-accent-tint); }
