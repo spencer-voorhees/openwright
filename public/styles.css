@@ -1225,3 +1225,5 @@ textarea.field { resize: none; line-height: 1.5; }
 .set-accent:hover { transform: scale(1.08); }
 .set-accent.active { border-color: #fff; }
 .set-accent svg { width: 16px; height: 16px; color: #fff; filter: drop-shadow(0 1px 2px rgba(0,0,0,.6)); }
+.set-accent.is-light { box-shadow: inset 0 0 0 1px rgba(0,0,0,.25); }
+.set-accent.is-light svg { color: #16161a; filter: none; }

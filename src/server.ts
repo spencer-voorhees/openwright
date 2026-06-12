@@ -23,7 +23,7 @@ import { ADAPTERS, DEFAULT_ENGINE } from "./agents/index";
 const PORT = Number(process.env.OPENWRIGHT_PORT || process.env.PORT || 8090);
 
 // Accent presets — the UI offers exactly these; PATCH validates.
-const ACCENT_PRESETS = ["#ff5a1f", "#0A84FF", "#BF5AF2", "#30D158", "#FF375F", "#64D2FF", "#FFD60A"];
+const ACCENT_PRESETS = ["#ff5a1f", "#0A84FF", "#BF5AF2", "#30D158", "#FF375F", "#64D2FF", "#FFD60A", "#F5F5F7"];
 
 // Agent probes spawn CLIs (--version, login status, help) — cache per
 // adapter and refresh in parallel so /api/agents answers fast.

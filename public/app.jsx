@@ -318,6 +318,7 @@ const ACCENTS = [
   { name: "Pink",   hex: "#FF375F" },
   { name: "Cyan",   hex: "#64D2FF" },
   { name: "Yellow", hex: "#FFD60A" },
+  { name: "White",  hex: "#F5F5F7" },
 ];
 let CURRENT_ACCENT = "#ff5a1f";
 function shade(hex, f) {
@@ -528,14 +529,17 @@ function SettingsView() {
           <h2 className="set-section-title">Accent color</h2>
           <p className="set-section-sub">Drives buttons, highlights, and the logo.</p>
           <div className="set-accents">
-            {ACCENTS.map((a) => (
-              <button key={a.hex} title={a.name}
-                      className={"set-accent" + ((settings?.accent_color || "#ff5a1f") === a.hex ? " active" : "")}
-                      style={{ background: a.hex }}
-                      onClick={async () => { await save({ accent_color: a.hex }); applyAccent(a.hex); }}>
-                {(settings?.accent_color || "#ff5a1f") === a.hex && <Icon name="check" />}
-              </button>
-            ))}
+            {ACCENTS.map((a) => {
+              const light = a.hex === "#F5F5F7" || a.hex === "#FFD60A";
+              return (
+                <button key={a.hex} title={a.name}
+                        className={"set-accent" + ((settings?.accent_color || "#ff5a1f") === a.hex ? " active" : "") + (light ? " is-light" : "")}
+                        style={{ background: a.hex }}
+                        onClick={async () => { await save({ accent_color: a.hex }); applyAccent(a.hex); }}>
+                  {(settings?.accent_color || "#ff5a1f") === a.hex && <Icon name="check" />}
+                </button>
+              );
+            })}
           </div>
         </div>
 
