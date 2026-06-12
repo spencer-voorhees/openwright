@@ -15,5 +15,6 @@
   },
   "bin": {
     "openwright": "./bin/openwright.ts"
-  }
+  },
+  "license": "MIT"
 }
