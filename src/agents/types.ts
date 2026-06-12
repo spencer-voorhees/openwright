@@ -44,5 +44,9 @@ export interface AgentAdapter {
   // Returns a human-readable detail either way (version, or what to
   // install / how to log in).
   available(): Promise<{ ok: boolean; detail: string }>;
+  // Optional deep check for engines whose CLI has no auth-status
+  // command (copilot): does a real round-trip, so it's on-demand
+  // only, never part of routine probing.
+  verifyAuth?(): Promise<{ ok: boolean; detail: string }>;
   run(opts: AgentRunOpts): Promise<AgentResult>;
 }

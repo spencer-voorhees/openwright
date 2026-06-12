@@ -1234,3 +1234,14 @@ textarea.field { resize: none; line-height: 1.5; }
 /* Native dropdown lists: explicit colors as a fallback for engines
    that ignore color-scheme (Windows legibility issue). */
 select option { background-color: #161618; color: #f5f5f7; }
+
+.set-agent-verify {
+  margin-top: 8px; align-self: flex-start;
+  font-size: 11px; font-weight: 600; cursor: pointer;
+  padding: 4px 10px; border-radius: 7px;
+  background: transparent; color: var(--wp-fg-muted);
+  border: 1px solid var(--wp-border);
+  transition: color .12s ease, border-color .12s ease;
+}
+.set-agent-verify:hover { color: var(--wp-fg); border-color: var(--wp-border-strong); }
+.set-agent-verify:disabled { opacity: .6; cursor: default; }

@@ -514,16 +514,8 @@ function SettingsView() {
           <div className="set-agents">
             {agents === null && <div className="set-empty">Probing engines…</div>}
             {(agents || []).map((a) => (
-              <button key={a.id}
-                      className={"set-agent" + (a.id === eng ? " active" : "") + (a.ok ? "" : " unavailable")}
-                      onClick={() => save({ default_agent_engine: a.id })}>
-                <span className="set-agent-top">
-                  <span className={"set-agent-dot" + (a.ok ? " ok" : "")} />
-                  <span className="set-agent-name">{a.label}</span>
-                  {a.id === eng && <Icon name="check" />}
-                </span>
-                <span className="set-agent-detail">{a.detail}</span>
-              </button>
+              <AgentCard key={a.id} agent={a} active={a.id === eng}
+                         onPick={() => save({ default_agent_engine: a.id })} />
             ))}
           </div>
         </div>
@@ -559,6 +551,36 @@ function SettingsView() {
           </select>
         </div>
       </div>
+    </div>
+  );
+}
+
+function AgentCard({ agent: a, active, onPick }) {
+  const [verifying, setVerifying] = useState(false);
+  const [verdict, setVerdict] = useState(null);   // {ok, detail}
+  return (
+    <div className={"set-agent" + (active ? " active" : "") + (a.ok ? "" : " unavailable")}
+         role="button" tabIndex={0} onClick={onPick}
+         onKeyDown={(e) => { if (e.key === "Enter") onPick(); }}>
+      <span className="set-agent-top">
+        <span className={"set-agent-dot" + ((verdict ? verdict.ok : a.ok) ? " ok" : "")} />
+        <span className="set-agent-name">{a.label}</span>
+        {active && <Icon name="check" />}
+      </span>
+      <span className="set-agent-detail">{verdict ? verdict.detail : a.detail}</span>
+      {a.id === "copilot" && (
+        <button className="set-agent-verify"
+                disabled={verifying}
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  setVerifying(true);
+                  try { setVerdict(await postJson("/api/agents/copilot/verify", {})); }
+                  catch (err) { setVerdict({ ok: false, detail: "check failed: " + err.message }); }
+                  finally { setVerifying(false); }
+                }}>
+          {verifying ? "Checking… (sends one tiny request)" : "Verify auth"}
+        </button>
+      )}
     </div>
   );
 }

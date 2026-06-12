@@ -908,6 +908,17 @@ function route(req: Request, url: URL): Promise<Response> | Response {
       return json({ agents: out, default: ADAPTERS.some((a) => a.id === def) ? def : DEFAULT_ENGINE });
     })();
   }
+  const mVerify = url.pathname.match(/^\/api\/agents\/([a-z]+)\/verify$/);
+  if (mVerify && req.method === "POST") {
+    return (async () => {
+      const a = ADAPTERS.find((x) => x.id === mVerify[1]);
+      if (!a) return err("unknown engine", 404);
+      if (!a.verifyAuth) return err("engine has no deep auth check (its availability probe is authoritative)", 400);
+      const r = await a.verifyAuth();
+      probeCache.delete(a.id);   // availability detail may change
+      return json(r);
+    })();
+  }
   if (url.pathname === "/api/settings" && req.method === "GET") {
     return json({
       settings: {

@@ -61,13 +61,38 @@ export const copilotAdapter: AgentAdapter = {
       // Version works without auth; probe auth state cheaply via a
       // no-tool prompt with a short timeout? Too slow for a health
       // check — report the version and let the first run surface auth.
-      return { ok: true, detail: out.split("\n")[0] || "installed" };
+      const hasToken = !!(process.env.COPILOT_GITHUB_TOKEN || process.env.GH_TOKEN || process.env.GITHUB_TOKEN);
+      return {
+        ok: true,
+        detail: (out.split("\n")[0] || "installed") + (hasToken ? " · token set" : " · auth unknown — verify in Settings"),
+      };
     } catch {
       return {
         ok: false,
         detail: "copilot CLI not found — `npm install -g @github/copilot`, then run `copilot` once and /login.",
       };
     }
+  },
+
+  async verifyAuth() {
+    // The CLI has no status command; a minimal prompt round-trip is
+    // the only authoritative check. Unauthenticated fails fast;
+    // authenticated costs one tiny request.
+    const { tmpdir } = await import("node:os");
+    const proc = Bun.spawn({
+      cmd: [COPILOT_BIN, "-p", "Reply with exactly: OK", "--allow-all-tools", "--no-color", "--no-auto-update", "--log-level", "error"],
+      cwd: tmpdir(),
+      stdout: "pipe", stderr: "pipe",
+      env: { ...process.env },
+    });
+    const killer = setTimeout(() => { try { proc.kill(); } catch {} }, 90_000);
+    const out = (await new Response(proc.stdout).text()) + (await new Response(proc.stderr).text());
+    clearTimeout(killer);
+    if (/no authentication information|not authenticated|please log ?in/i.test(out)) {
+      return { ok: false, detail: "not signed in — run 'copilot login' in a terminal" };
+    }
+    if (/\bOK\b/.test(out)) return { ok: true, detail: "signed in — Copilot responded" };
+    return { ok: false, detail: `unexpected reply: ${out.trim().slice(-160) || "(no output)"}` };
   },
 
   async run(opts: AgentRunOpts): Promise<AgentResult> {
