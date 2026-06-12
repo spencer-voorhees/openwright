@@ -27,7 +27,7 @@ const ACCENT_PRESETS = ["#ff5a1f", "#0A84FF", "#BF5AF2", "#30D158", "#FF375F", "
 
 // Agent probes spawn CLIs (--version, login status, help) — cache per
 // adapter and refresh in parallel so /api/agents answers fast.
-type AgentProbe = { id: string; label: string; models: string[]; ok: boolean; detail: string };
+type AgentProbe = { id: string; label: string; models: string[]; ok: boolean; detail: string; pending?: boolean };
 const probeCache = new Map<string, { at: number; probe: AgentProbe }>();
 // CLIs can hang on first run (copilot with no config blocks forever),
 // so every probe gets a hard deadline.
@@ -44,9 +44,18 @@ async function refreshProbe(a: (typeof ADAPTERS)[number]): Promise<AgentProbe> {
   probeCache.set(a.id, { at: Date.now(), probe });
   return probe;
 }
+const probeInflight = new Map<string, Promise<AgentProbe>>();
 async function probeAgent(a: (typeof ADAPTERS)[number]): Promise<AgentProbe> {
   const hit = probeCache.get(a.id);
-  if (!hit) return refreshProbe(a);
+  if (!hit) {
+    // Cold start: answer instantly with a pending placeholder and let
+    // the real probe land in the cache — the UI refetches until no
+    // probe is pending. CLI spawns can take seconds on Windows.
+    if (!probeInflight.has(a.id)) {
+      probeInflight.set(a.id, refreshProbe(a).finally(() => probeInflight.delete(a.id)));
+    }
+    return { id: a.id, label: a.label, models: [], ok: false, detail: "checking…", pending: true } as AgentProbe;
+  }
   // Stale-while-revalidate: never make the UI wait on CLI spawns —
   // serve the last known answer and refresh in the background.
   if (Date.now() - hit.at > 60_000) refreshProbe(a);

@@ -522,8 +522,16 @@ function SettingsView() {
   const [settings, setSettings] = useState(null);
   const [saved, setSaved] = useState(false);
   useEffect(() => {
-    fetchJson("/api/agents").then((d) => setAgents(d.agents || [])).catch(() => setAgents([]));
+    let dead = false;
+    const load = () => fetchJson("/api/agents").then((d) => {
+      if (dead) return;
+      const list = d.agents || [];
+      setAgents(list);
+      if (list.some((a) => a.pending)) setTimeout(load, 1000);
+    }).catch(() => !dead && setAgents([]));
+    load();
     fetchJson("/api/settings").then((d) => setSettings(d.settings)).catch(() => {});
+    return () => { dead = true; };
   }, []);
   const save = async (patch) => {
     const d = await patchJson("/api/settings", patch);
@@ -549,7 +557,7 @@ function SettingsView() {
           <h2 className="set-section-title">Default agent</h2>
           <p className="set-section-sub">New workspaces start on this engine. Pick an engine card, then optionally pin a model.</p>
           <div className="set-agents">
-            {agents === null && <div className="set-empty">Probing engines…</div>}
+            {agents === null && <div className="set-empty"><Spinner style={{ width: 14, height: 14 }} /> Probing engines…</div>}
             {(agents || []).map((a) => (
               <AgentCard key={a.id} agent={a} active={a.id === eng}
                          onPick={() => save({ default_agent_engine: a.id })} />
@@ -600,7 +608,9 @@ function AgentCard({ agent: a, active, onPick }) {
          role="button" tabIndex={0} onClick={onPick}
          onKeyDown={(e) => { if (e.key === "Enter") onPick(); }}>
       <span className="set-agent-top">
-        <span className={"set-agent-dot" + ((verdict ? verdict.ok : a.ok) ? " ok" : "")} />
+        {a.pending
+          ? <Spinner style={{ width: 10, height: 10 }} />
+          : <span className={"set-agent-dot" + ((verdict ? verdict.ok : a.ok) ? " ok" : "")} />}
         <span className="set-agent-name">{a.label}</span>
         {active && <Icon name="check" />}
       </span>
@@ -1033,7 +1043,15 @@ function WorkspaceSettingsButton({ ws, onChange, runActive }) {
 function InlineAgentSelect({ ws, onChange }) {
   const [agents, setAgents] = useState([]);
   useEffect(() => {
-    fetchJson("/api/agents").then((d) => setAgents(d.agents || [])).catch(() => setAgents([]));
+    let dead = false;
+    const load = () => fetchJson("/api/agents").then((d) => {
+      if (dead) return;
+      const list = d.agents || [];
+      setAgents(list);
+      if (list.some((a) => a.pending)) setTimeout(load, 1000);
+    }).catch(() => !dead && setAgents([]));
+    load();
+    return () => { dead = true; };
   }, []);
   const cur = ws.agent_engine || "claude";
   const curInfo = agents.find((a) => a.id === cur);
