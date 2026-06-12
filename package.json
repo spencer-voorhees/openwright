@@ -1,6 +1,6 @@
 {
   "name": "openwright",
-  "version": "0.1.1",
+  "version": "0.1.0",
   "description": "BYOA slide-deck workspace: agent-built HTML decks with PDF/PPTX export. Claude, Copilot, or Codex at the core.",
   "private": true,
   "scripts": {
