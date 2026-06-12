@@ -2,6 +2,6 @@
   {
     "name": "Oneshot",
     "slug": "oneshot",
-    "description": "Export-lossless baseline. Clean ink-on-paper slides that survive the editable PPTX export one for one. Pick this when the deck will be edited in PowerPoint."
+    "description": "Export-lossless baseline. Clean ink-on-paper slides that survive the editable PPTX export one for one."
   }
 ]
