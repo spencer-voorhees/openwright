@@ -208,7 +208,7 @@ function podStatus(generations) {
 function App() {
   const [workspaces, setWorkspaces] = useState([]);
   const [activeSlug, setActiveSlug] = useState(null);
-  const [view, setView] = useState("dashboard");   // "dashboard" | "workspace" | "design-systems"
+  const [view, setView] = useState("dashboard");   // "dashboard" | "workspace" | "design-systems" | "settings"
   const [activeSystemId, setActiveSystemId] = useState(null);
   const [menu, setMenu] = useState(null);            // {ws, x, y}
   const [modal, setModal] = useState(null);
@@ -258,6 +258,7 @@ function App() {
       <Rail workspaces={workspaces} activeSlug={activeSlug}
             view={view} onHome={backToDashboard}
             onOpenDesignSystems={() => { setView("design-systems"); setActiveSystemId(null); }}
+            onOpenSettings={() => setView("settings")}
             onOpen={openWs} onNew={() => setModal({ type: "new-ws" })} />
       <div className={"ws " + (wsTab === "agent" ? "ws-tab-agent" : "ws-tab-files")}>
         {view === "dashboard" && (
@@ -275,6 +276,7 @@ function App() {
                          onSelect={(id) => setActiveSystemId(id)}
                          onBack={backToDashboard} />
         )}
+        {view === "settings" && <SettingsView />}
       </div>
       {menu && (
         <div className="menu" style={{ left: menu.x, top: menu.y }} onClick={(e) => e.stopPropagation()}>
@@ -310,7 +312,7 @@ function railStatus(ws) {
   return "idle";
 }
 
-function Rail({ workspaces, activeSlug, view, onHome, onOpen, onNew, onOpenDesignSystems }) {
+function Rail({ workspaces, activeSlug, view, onHome, onOpen, onNew, onOpenDesignSystems, onOpenSettings }) {
   return (
     <aside className="rail">
       <button className="rail-logo" onClick={onHome} title="Workspaces">
@@ -341,7 +343,10 @@ function Rail({ workspaces, activeSlug, view, onHome, onOpen, onNew, onOpenDesig
               onClick={onOpenDesignSystems} title="Design systems">
         <Icon name="palette" />
       </button>
-      <div className="rail-avatar">SV</div>
+      <button className={"rail-btn" + (view === "settings" ? " on" : "")}
+              onClick={onOpenSettings} title="Settings">
+        <Icon name="settings" />
+      </button>
     </aside>
   );
 }
@@ -350,72 +355,76 @@ function Rail({ workspaces, activeSlug, view, onHome, onOpen, onNew, onOpenDesig
 // DASHBOARD
 // ═══════════════════════════════════════════════════════════════
 
-// App-level defaults: which engine/model new workspaces start with.
-function GlobalSettingsButton() {
-  const [open, setOpen] = useState(false);
-  const [agents, setAgents] = useState([]);
+// ═══════════════════════════════════════════════════════════════
+// SETTINGS — app-level defaults + agent availability
+// ═══════════════════════════════════════════════════════════════
+
+function SettingsView() {
+  const [agents, setAgents] = useState(null);
   const [settings, setSettings] = useState(null);
+  const [saved, setSaved] = useState(false);
   useEffect(() => {
-    if (!open) return;
-    fetchJson("/api/agents").then((d) => setAgents(d.agents || [])).catch(() => {});
+    fetchJson("/api/agents").then((d) => setAgents(d.agents || [])).catch(() => setAgents([]));
     fetchJson("/api/settings").then((d) => setSettings(d.settings)).catch(() => {});
-    const close = () => setOpen(false);
-    window.addEventListener("click", close);
-    return () => window.removeEventListener("click", close);
-  }, [open]);
+  }, []);
   const save = async (patch) => {
     const d = await patchJson("/api/settings", patch);
     setSettings(d.settings);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1600);
   };
   const eng = settings?.default_agent_engine || "";
-  const engInfo = agents.find((a) => a.id === eng);
+  const engInfo = (agents || []).find((a) => a.id === eng);
   return (
-    <span style={{ position: "relative" }} onClick={(e) => e.stopPropagation()}>
-      <button className="icon-btn ws-settings-btn" title="App settings" onClick={() => setOpen((o) => !o)}>
-        <Icon name="settings" />
-      </button>
-      {open && (
-        <div className="ws-settings-pop" style={{ right: 0, left: "auto" }}>
-          <div className="ws-settings-row">
-            <div className="ws-settings-label">
-              <Icon name="bot" />
-              <span>Default agent</span>
-            </div>
-            <div className="ws-settings-control">
-              <select className="ws-settings-select" value={eng}
-                      onChange={(e) => save({ default_agent_engine: e.target.value })}>
-                {!settings && <option value="">loading…</option>}
-                {agents.map((a) => (
-                  <option key={a.id} value={a.id}>{a.label}{a.ok ? "" : " (not set up)"}</option>
-                ))}
-              </select>
-            </div>
+    <div className="dash">
+      <div className="dash-inner">
+        <div className="dash-head">
+          <div>
+            <div className="eyebrow" style={{ marginBottom: 12 }}>OpenPod</div>
+            <h1 className="dash-title">Settings</h1>
+            <p className="dash-sub">Defaults for new workspaces. Each workspace can override its agent and model in workspace settings.</p>
           </div>
-          <div className="ws-settings-row">
-            <div className="ws-settings-label">
-              <Icon name="sparkles" />
-              <span>Default model</span>
-            </div>
-            <div className="ws-settings-control">
-              <input className="ws-settings-select" type="text" list="global-models"
-                     placeholder="engine default"
-                     defaultValue={settings?.default_agent_model || ""}
-                     key={`gm-${eng}-${settings?.default_agent_model || ""}`}
-                     onBlur={(e) => {
-                       const v = e.target.value.trim();
-                       if (v !== (settings?.default_agent_model || "")) save({ default_agent_model: v });
-                     }} />
-              <datalist id="global-models">
-                {(engInfo?.models || []).filter(Boolean).map((m) => <option key={m} value={m} />)}
-              </datalist>
-            </div>
-          </div>
-          <div style={{ fontSize: 10.5, color: "var(--wp-fg-faint)", padding: "6px 10px 8px" }}>
-            Applied to new workspaces. Existing workspaces keep their own setting.
+          <span className={"set-saved" + (saved ? " show" : "")}><Icon name="check" /> Saved</span>
+        </div>
+
+        <div className="set-section">
+          <h2 className="set-section-title">Default agent</h2>
+          <p className="set-section-sub">New workspaces start on this engine. Pick an engine card, then optionally pin a model.</p>
+          <div className="set-agents">
+            {agents === null && <div className="set-empty">Probing engines…</div>}
+            {(agents || []).map((a) => (
+              <button key={a.id}
+                      className={"set-agent" + (a.id === eng ? " active" : "") + (a.ok ? "" : " unavailable")}
+                      onClick={() => save({ default_agent_engine: a.id })}>
+                <span className="set-agent-top">
+                  <span className={"set-agent-dot" + (a.ok ? " ok" : "")} />
+                  <span className="set-agent-name">{a.label}</span>
+                  {a.id === eng && <Icon name="check" />}
+                </span>
+                <span className="set-agent-detail">{a.detail}</span>
+              </button>
+            ))}
           </div>
         </div>
-      )}
-    </span>
+
+        <div className="set-section">
+          <h2 className="set-section-title">Default model</h2>
+          <p className="set-section-sub">Optional — leave blank to use the engine's own default. Suggestions follow the selected engine; free text is allowed.</p>
+          <input className="field set-model" type="text" list="global-models"
+                 placeholder={engInfo ? `engine default for ${engInfo.label}` : "engine default"}
+                 defaultValue={settings?.default_agent_model || ""}
+                 key={`gm-${eng}-${settings?.default_agent_model || ""}`}
+                 onBlur={(e) => {
+                   const v = e.target.value.trim();
+                   if (v !== (settings?.default_agent_model || "")) save({ default_agent_model: v });
+                 }}
+                 onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }} />
+          <datalist id="global-models">
+            {(engInfo?.models || []).filter(Boolean).map((m) => <option key={m} value={m} />)}
+          </datalist>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -440,10 +449,7 @@ function Dashboard({ workspaces, onOpen, onNew, onMenu }) {
             <h1 className="dash-title">Workspaces</h1>
             <p className="dash-sub">Each workspace is a sandbox on the host where the agent works — drop in files, notes, and context, then generate artifacts.</p>
           </div>
-          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            <GlobalSettingsButton />
-            <button className="btn btn-primary" onClick={onNew}><Icon name="plus" /> New workspace</button>
-          </div>
+          <button className="btn btn-primary" onClick={onNew}><Icon name="plus" /> New workspace</button>
         </div>
         <div className="dash-tools">
           <div className="search">
@@ -842,7 +848,8 @@ function InlineAgentSelect({ ws, onChange }) {
         </span>
       )}
       <input className="ws-settings-select" type="text" list={`models-${cur}`}
-             placeholder="model (engine default)"
+             style={{ width: "100%" }}
+             placeholder="model (default)"
              defaultValue={ws.agent_model || ""}
              key={`${ws.slug}-${cur}`}
              onBlur={async (e) => {
@@ -1296,9 +1303,9 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted })
       )}
       <div className="artifact-head">
         <div className="artifact-ico"><Icon name="monitor-play" /></div>
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="artifact-info" style={{ flex: 1, minWidth: 0 }}>
           <div className="artifact-name">
-            {name}
+            <span className="artifact-fname">{name}</span>
             {cur.validator_verdict === "abort" && (
               <span className="vfail-badge" title="Validator marked this build as abort — artifact is still downloadable but the validator flagged unresolved issues">
                 <Icon name="shield-alert" /> Validation failed
@@ -1310,7 +1317,7 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted })
               </span>
             )}
           </div>
-          <div className="artifact-sub">PPTX · run #{cur.id} · {fmtTime(cur.completed_at)}{isLatest ? "" : " · viewing older version"}</div>
+          <div className="artifact-sub">HTML · run #{cur.id} · {fmtTime(cur.completed_at)}{isLatest ? "" : " · viewing older version"}</div>
         </div>
         {cur.artifact_id && <CommentsSection artifactId={cur.artifact_id} wsSlug={wsSlug}
                                              refreshKey={commentsBump}
