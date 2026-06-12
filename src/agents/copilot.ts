@@ -64,7 +64,7 @@ export const copilotAdapter: AgentAdapter = {
       const hasToken = !!(process.env.COPILOT_GITHUB_TOKEN || process.env.GH_TOKEN || process.env.GITHUB_TOKEN);
       return {
         ok: true,
-        detail: (out.split("\n")[0] || "installed") + (hasToken ? " · token set" : " · auth unknown — verify in Settings"),
+        detail: (out.split("\n")[0] || "installed") + (hasToken ? " · token set" : " · auth unknown, verify in Settings"),
       };
     } catch {
       return {
@@ -89,9 +89,9 @@ export const copilotAdapter: AgentAdapter = {
     const out = (await new Response(proc.stdout).text()) + (await new Response(proc.stderr).text());
     clearTimeout(killer);
     if (/no authentication information|not authenticated|please log ?in/i.test(out)) {
-      return { ok: false, detail: "not signed in — run 'copilot login' in a terminal" };
+      return { ok: false, detail: "not signed in. Run 'copilot login' in a terminal" };
     }
-    if (/\bOK\b/.test(out)) return { ok: true, detail: "signed in — Copilot responded" };
+    if (/\bOK\b/.test(out)) return { ok: true, detail: "signed in, Copilot responded" };
     return { ok: false, detail: `unexpected reply: ${out.trim().slice(-160) || "(no output)"}` };
   },
 
