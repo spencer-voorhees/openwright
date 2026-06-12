@@ -158,6 +158,7 @@ iframe (no build step). The same source ships to PDF (chromium print) and
 to editable PPTX (DOM-walking exporter) — so HTML/CSS is the source of
 truth; what you write is what the user sees.
 
+Host OS: ${process.platform === "win32" ? "Windows — use Windows-style paths (C:\\...) and PowerShell/cmd-compatible commands" : process.platform === "darwin" ? "macOS (POSIX paths and shell)" : "Linux (POSIX paths and shell)"}
 Workspace: "${ws.name}" (slug ${ws.slug})
 Workspace directory: ${join(WORKSPACE_ROOT, ws.slug)}
 Artifact for this run: "${artifactName}" — outputs go in artifacts/${artifactSlug}/.

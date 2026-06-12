@@ -13,3 +13,4 @@ exports/
 .openwright.pid
 openwright.log
 .openwright-launch.cmd
+openwright.log.err

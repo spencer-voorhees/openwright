@@ -69,17 +69,30 @@ async function start(foreground = false, noOpen = false) {
     const proc = Bun.spawn({ cmd: [process.execPath, "run", join(ROOT, "src", "server.ts")], cwd: ROOT, stdout: "inherit", stderr: "inherit" });
     process.exit(await proc.exited);
   }
-  // detached:true gives the server its own process group/console on
-  // every platform (DETACHED_PROCESS on Windows), so it survives the
-  // CLI, setup, and the terminal. stdio goes straight to the logfile.
-  const fd = openSync(LOGFILE, "a");
-  const child = spawn(process.execPath, ["run", join(ROOT, "src", "server.ts")], {
-    cwd: ROOT,
-    detached: true,
-    stdio: ["ignore", fd, fd],
-  });
-  child.unref();
-  const spawnedPid: number | null = child.pid || null;
+  let spawnedPid: number | null = null;
+  if (platform() === "win32") {
+    // Start-Process -WindowStyle Hidden: the server gets a hidden
+    // console that its own children (claude/copilot/codex/python)
+    // inherit — no popup windows — and it outlives this CLI, setup,
+    // and the terminal. -PassThru hands back the pid.
+    const psCmd = `$p = Start-Process -FilePath '${process.execPath}' ` +
+      `-ArgumentList 'run','${join(ROOT, "src", "server.ts")}' ` +
+      `-WorkingDirectory '${ROOT}' -WindowStyle Hidden ` +
+      `-RedirectStandardOutput '${LOGFILE}' -RedirectStandardError '${LOGFILE}.err' ` +
+      `-PassThru; Write-Output $p.Id`;
+    const out = Bun.spawnSync({ cmd: ["powershell", "-NoProfile", "-Command", psCmd], cwd: ROOT });
+    spawnedPid = Number(out.stdout.toString().trim()) || null;
+  } else {
+    // detached:true = own process group; survives the terminal.
+    const fd = openSync(LOGFILE, "a");
+    const child = spawn(process.execPath, ["run", join(ROOT, "src", "server.ts")], {
+      cwd: ROOT,
+      detached: true,
+      stdio: ["ignore", fd, fd],
+    });
+    child.unref();
+    spawnedPid = child.pid || null;
+  }
   if (spawnedPid) writeFileSync(PIDFILE, String(spawnedPid));
   for (let i = 0; i < 40; i++) {
     if (await healthy()) {
@@ -111,16 +124,21 @@ async function status() {
 }
 
 function logs(n = 60) {
-  if (!existsSync(LOGFILE)) { console.log("(no log file yet)"); return; }
-  const lines = readFileSync(LOGFILE, "utf-8").trimEnd().split("\n");
-  console.log(lines.slice(-n).join("\n"));
+  let text = "";
+  for (const f of [LOGFILE, `${LOGFILE}.err`]) {
+    try { text += readFileSync(f, "utf-8"); } catch {}
+  }
+  if (!text.trim()) { console.log("(no log output yet)"); return; }
+  console.log(text.trimEnd().split("\n").slice(-n).join("\n"));
 }
 
 function openBrowser() {
   const cmd = platform() === "darwin" ? ["open", URL_]
     : platform() === "win32" ? ["cmd", "/c", "start", "", URL_]
     : ["xdg-open", URL_];
-  Bun.spawn({ cmd, stdout: "ignore", stderr: "ignore" });
+  // sync: the CLI exits right after, and a killed async child means
+  // the browser never opens (seen on Windows).
+  Bun.spawnSync({ cmd, stdout: "ignore", stderr: "ignore" });
   console.log(URL_);
 }
 
