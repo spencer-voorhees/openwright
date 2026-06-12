@@ -298,19 +298,18 @@ function App() {
 // ═══════════════════════════════════════════════════════════════
 
 // Workspace identicon: a 4x4 horizontally-mirrored pixel pattern.
-// Color comes from a curated palette of muted tones tuned for the
-// dark UI (not raw hue rotation — that read as confetti against the
-// slate + single-accent aesthetic). Uniqueness = pattern + tone.
+// Colors are the iOS dark-mode system palette — bold, saturated,
+// built for near-black backgrounds. The tile is the color at low
+// alpha; the pattern is the color near full strength.
 function icHash(str) {
   let h = 2166136261;
   for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
   return h >>> 0;
 }
-// [hue, sat] pairs: slate blue, steel, teal, sage, amber, rust, mauve, rose
-const IC_TONES = [[215, 34], [225, 22], [180, 30], [140, 26], [40, 34], [18, 32], [290, 24], [345, 26]];
+const IC_COLORS = ["#0A84FF", "#64D2FF", "#30D158", "#FFD60A", "#FF9F0A", "#FF375F", "#BF5AF2", "#5E5CE6"];
 function Identicon({ seed, className, soft }) {
   const h = icHash(String(seed));
-  const [hue, sat] = IC_TONES[h % IC_TONES.length];
+  const color = IC_COLORS[h % IC_COLORS.length];
   const cells = [];
   let bits = h;
   for (let r = 0; r < 4; r++) {
@@ -321,15 +320,14 @@ function Identicon({ seed, className, soft }) {
       }
     }
   }
-  // soft = letters render on top (rail chips): pattern is a quiet
-  // tonal texture. Cards get the same palette, slightly more present.
-  const bg = `hsl(${hue} ${sat}% 20%)`;
-  const cell = soft ? `hsl(${hue} ${sat}% 29%)` : `hsl(${hue} ${Math.min(sat + 6, 40)}% 40%)`;
+  // soft = letters render on top (rail chips): pattern pulls back so
+  // the white glyphs stay crisp. Cards run it near full strength.
   return (
     <svg className={className} viewBox="0 0 4 4" aria-hidden="true">
-      <rect width="4" height="4" fill={bg} />
+      <rect width="4" height="4" fill="#101013" />
+      <rect width="4" height="4" fill={color} opacity="0.17" />
       {cells.map(([r, c]) => (
-        <rect key={`${r}-${c}`} x={c} y={r} width="1" height="1" fill={cell} />
+        <rect key={`${r}-${c}`} x={c} y={r} width="1" height="1" fill={color} opacity={soft ? 0.52 : 0.92} />
       ))}
     </svg>
   );
