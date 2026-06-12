@@ -117,6 +117,12 @@ async function listWorkspaces() {
            (SELECT completed_at FROM generations
              WHERE workspace_id = w.id AND status = 'done'
              ORDER BY completed_at DESC LIMIT 1) AS latest_done_at,
+           (SELECT status FROM generations
+             WHERE workspace_id = w.id
+             ORDER BY id DESC LIMIT 1) AS latest_gen_status,
+           (SELECT COALESCE(completed_at, started_at) FROM generations
+             WHERE workspace_id = w.id
+             ORDER BY id DESC LIMIT 1) AS latest_gen_at,
            (SELECT id FROM generations
              WHERE workspace_id = w.id
                AND status IN ('queued','running','awaiting_user')

@@ -436,12 +436,16 @@ function RailLogo() {
 }
 
 function railStatus(ws) {
+  const RECENT = 30 * 60_000;
   // Active gen wins.
   if (ws.active_gen_status === "running" || ws.active_gen_status === "queued") return "running";
   if (ws.active_gen_status === "awaiting_user") return "awaiting_user";
-  // Recent successful output (< 30 min) lights the chip green so a
-  // fresh deck is visible at a glance after a run finishes.
-  if (ws.latest_done_at && Date.now() - ws.latest_done_at < 30 * 60_000) return "done";
+  // A recently-errored LATEST run must never hide behind an older
+  // success — error outranks the green light.
+  if (ws.latest_gen_status === "errored" && ws.latest_gen_at && Date.now() - ws.latest_gen_at < RECENT) return "errored";
+  // Recent successful output lights the chip green so a fresh deck
+  // is visible at a glance after a run finishes.
+  if (ws.latest_gen_status === "done" && ws.latest_done_at && Date.now() - ws.latest_done_at < RECENT) return "done";
   return "idle";
 }
 
