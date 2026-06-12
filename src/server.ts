@@ -29,10 +29,16 @@ const ACCENT_PRESETS = ["#ff5a1f", "#0A84FF", "#BF5AF2", "#30D158", "#FF375F", "
 // adapter and refresh in parallel so /api/agents answers fast.
 type AgentProbe = { id: string; label: string; models: string[]; ok: boolean; detail: string };
 const probeCache = new Map<string, { at: number; probe: AgentProbe }>();
+// CLIs can hang on first run (copilot with no config blocks forever),
+// so every probe gets a hard deadline.
+function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([p, new Promise<T>((res) => setTimeout(() => res(fallback), ms))]);
+}
 async function refreshProbe(a: (typeof ADAPTERS)[number]): Promise<AgentProbe> {
   const [avail, models] = await Promise.all([
-    a.available().catch(() => ({ ok: false, detail: "probe failed" })),
-    a.listModels().catch(() => [] as string[]),
+    withTimeout(a.available().catch(() => ({ ok: false, detail: "probe failed" })), 6000,
+      { ok: false, detail: "probe timed out" }),
+    withTimeout(a.listModels().catch(() => [] as string[]), 6000, [] as string[]),
   ]);
   const probe = { id: a.id, label: a.label, models, ...avail };
   probeCache.set(a.id, { at: Date.now(), probe });

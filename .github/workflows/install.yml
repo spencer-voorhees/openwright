@@ -23,9 +23,9 @@ jobs:
         run: |
           export PATH="$HOME/.bun/bin:$HOME/.local/bin:$PATH"
           "$HOME/.bun/bin/bun" bin/openwright.ts start --no-open
-          curl -fsS http://127.0.0.1:8090/api/workspaces
-          curl -fsS http://127.0.0.1:8090/api/design-systems | grep -q oneshot
-          curl -fsS http://127.0.0.1:8090/api/agents > /dev/null
+          curl -fsS --retry 4 --retry-all-errors --retry-delay 2 http://127.0.0.1:8090/api/workspaces
+          curl -fsS --retry 4 --retry-all-errors --retry-delay 2 http://127.0.0.1:8090/api/design-systems | grep -q oneshot
+          curl -fsS --retry 4 --retry-all-errors --retry-delay 2 --max-time 30 http://127.0.0.1:8090/api/agents > /dev/null
           "$HOME/.bun/bin/bun" bin/openwright.ts status
           "$HOME/.bun/bin/bun" bin/openwright.ts stop
 
