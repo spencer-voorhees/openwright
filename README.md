@@ -5,11 +5,36 @@
 Agent-built slide decks from a workspace of files. Drop in source material
 (markdown, PDFs, transcripts, CSVs), hit Generate, and an agent writes a
 single-file HTML deck rendered live in the app — exportable to PDF and to
-genuinely editable PPTX. Review with inline comments, send them back to the
-agent, iterate.
+genuinely editable PPTX.
 
-Bring your own agent: Claude (Agent SDK), GitHub Copilot CLI, or OpenAI
-Codex CLI. Engine and model are selectable per workspace.
+Bring your own agent: **Claude** (Agent SDK), **GitHub Copilot CLI**, or
+**OpenAI Codex CLI**. Everything runs locally and drives the agent CLI you
+are already authorized to use — no new data path, files never leave your
+machine except through your chosen agent.
+
+## Features
+
+- **Review loop**: leave comments on the slide you're viewing, send the
+  batch to the agent, accept the fixes or reopen with a follow-up note.
+  The agent answers clarifying questions mid-run and you reply in the
+  same chat.
+- **Engine + model per workspace**: model pickers list what each engine
+  can actually run right now (probed live from the CLIs). Swap engines
+  whenever a run isn't mid-thought — even while one is waiting on your
+  answer — and the next turn continues on the new engine. Every run
+  records the engine and model that produced it.
+- **App-level defaults** in Settings: default engine, default model, and
+  the accent color (which also re-tints the logo). Copilot auth can be
+  verified on demand — useful where authorization is mandatory.
+- **Exports that finish the job**: PDF (headless Chromium print),
+  editable PPTX (every visual a real shape), pixel-perfect image PPTX,
+  and the HTML source — all under one Export menu, auto-downloading the
+  moment rendering completes.
+- **A workspace that behaves**: live preview with expand/collapse window
+  controls, version history per artifact, status everywhere it matters,
+  and a dashboard ordered by what you touched last.
+- **Local-only by default**: the server binds 127.0.0.1; set
+  `OPENWRIGHT_HOST=0.0.0.0` if you want it reachable from other devices.
 
 ## Quick start
 
@@ -29,8 +54,10 @@ openwright start     # http://localhost:8090
 ```sh
 git clone https://github.com/spencer-voorhees/openwright && cd openwright
 bash setup.sh        # guided; or `bash setup.sh -y` for hands-off
-bun start            # http://localhost:8090
 ```
+
+The wizard offers to start the app itself; afterwards it's
+`openwright start` (http://localhost:8090).
 
 Windows (PowerShell):
 
@@ -75,7 +102,9 @@ tools and are left in place either way.
 | Codex | `codex login` (ChatGPT account) or `codex login --api-key` |
 
 The workspace settings popover shows live availability per engine and a
-model picker (free text, with suggestions; blank = engine default).
+model dropdown listing what that engine reports as runnable right now.
+Settings can verify Copilot auth on demand (one minimal request) and
+remembers the result.
 
 ## How it works
 
@@ -93,9 +122,10 @@ model picker (free text, with suggestions; blank = engine default).
   and Codex read it from `AGENTS.md`, written into the workspace before
   each run.
 - **Design systems:** the app ships with **Oneshot**, an export-lossless
-  baseline. New design systems (via UI or agent) start as themed copies of
-  Oneshot — tokens change, structure stays — so every theme survives the
-  PPTX/PDF exporters.
+  baseline (Helvetica/solid fills/no effects that break PPTX). New design
+  systems derive from Oneshot — tokens change, structure stays — so every
+  theme survives the exporters. In-app creation is intentionally absent
+  until prompting an agent to build one is wired up.
 
 ## Layout
 
