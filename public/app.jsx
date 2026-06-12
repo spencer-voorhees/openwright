@@ -1001,21 +1001,7 @@ function WorkspaceSettingsButton({ ws, onChange, runActive }) {
       </button>
       {open && (
         <div className="ws-settings-pop">
-          <div className="ws-settings-row">
-            <div className="ws-settings-label">
-              <Icon name="bot" />
-              <span>Agent</span>
-            </div>
-            <div className="ws-settings-control" style={{ flexDirection: "column", alignItems: "stretch" }}>
-              <InlineAgentSelect ws={ws} onChange={onChange} />
-              {runActive && (
-                <span style={{ fontSize: 10.5, color: "var(--wp-warn)", marginTop: 6, maxWidth: 220, lineHeight: 1.45 }}>
-                  A run is active: switching takes effect on the agent's next turn
-                  (its next reply or restart), not mid-thought.
-                </span>
-              )}
-            </div>
-          </div>
+          <InlineAgentSelect ws={ws} onChange={onChange} runActive={runActive} />
           <div className="ws-settings-row">
             <div className="ws-settings-label">
               <Icon name="palette" />
@@ -1049,8 +1035,9 @@ function WorkspaceSettingsButton({ ws, onChange, runActive }) {
   );
 }
 
-// BYOA engine picker — lists registered adapters with availability.
-function InlineAgentSelect({ ws, onChange }) {
+// BYOA engine + model rows for the settings popover — each control
+// gets its own labeled row, like every other row in the popover.
+function InlineAgentSelect({ ws, onChange, runActive }) {
   const [agents, setAgents] = useState([]);
   useEffect(() => {
     let dead = false;
@@ -1066,35 +1053,57 @@ function InlineAgentSelect({ ws, onChange }) {
   const cur = ws.agent_engine || "claude";
   const curInfo = agents.find((a) => a.id === cur);
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
-      <select className="ws-settings-select" value={cur}
-              onChange={async (e) => {
-                await patchJson(`/api/workspaces/${ws.slug}`, { agent_engine: e.target.value });
-                onChange();
-              }}>
-        {agents.length === 0 && <option value={cur}>{cur}</option>}
-        {agents.map((a) => (
-          <option key={a.id} value={a.id}>{a.label}{a.ok ? "" : " (not set up)"}</option>
-        ))}
-      </select>
-      {curInfo && (
-        <span style={{ fontSize: 10.5, color: curInfo.ok ? "var(--wp-fg-faint)" : "var(--um-warning)" }}>
-          {curInfo.detail}
-        </span>
+    <>
+      <div className="ws-settings-row">
+        <div className="ws-settings-label">
+          <Icon name="bot" />
+          <span>Agent</span>
+        </div>
+        <div className="ws-settings-control" style={{ flexDirection: "column", alignItems: "stretch", gap: 4 }}>
+          <select className="ws-settings-select" value={cur}
+                  onChange={async (e) => {
+                    await patchJson(`/api/workspaces/${ws.slug}`, { agent_engine: e.target.value });
+                    onChange();
+                  }}>
+            {agents.length === 0 && <option value={cur}>{cur}</option>}
+            {agents.map((a) => (
+              <option key={a.id} value={a.id}>{a.label}{a.ok ? "" : " (not set up)"}</option>
+            ))}
+          </select>
+          {curInfo && (
+            <span style={{ fontSize: 10.5, maxWidth: 220, lineHeight: 1.4, color: curInfo.ok ? "var(--wp-fg-faint)" : "var(--um-warning)" }}>
+              {curInfo.detail}
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="ws-settings-row">
+        <div className="ws-settings-label">
+          <Icon name="sparkles" />
+          <span>Model</span>
+        </div>
+        <div className="ws-settings-control">
+          <select className="ws-settings-select" style={{ width: "100%" }}
+                  value={ws.agent_model || ""}
+                  onChange={async (e) => {
+                    await patchJson(`/api/workspaces/${ws.slug}`, { agent_model: e.target.value });
+                    onChange();
+                  }}>
+            <option value="">Default model</option>
+            {(curInfo?.models || []).filter(Boolean).map((m) => <option key={m} value={m}>{m}</option>)}
+            {ws.agent_model && !(curInfo?.models || []).includes(ws.agent_model) && (
+              <option value={ws.agent_model}>{ws.agent_model}</option>
+            )}
+          </select>
+        </div>
+      </div>
+      {runActive && (
+        <div style={{ fontSize: 10.5, color: "var(--wp-warn)", lineHeight: 1.45, padding: "2px 10px 6px" }}>
+          A run is active: switching takes effect on the agent's next turn
+          (its next reply or restart), not mid-thought.
+        </div>
       )}
-      <select className="ws-settings-select" style={{ width: "100%" }}
-              value={ws.agent_model || ""}
-              onChange={async (e) => {
-                await patchJson(`/api/workspaces/${ws.slug}`, { agent_model: e.target.value });
-                onChange();
-              }}>
-        <option value="">Default model</option>
-        {(curInfo?.models || []).filter(Boolean).map((m) => <option key={m} value={m}>{m}</option>)}
-        {ws.agent_model && !(curInfo?.models || []).includes(ws.agent_model) && (
-          <option value={ws.agent_model}>{ws.agent_model}</option>
-        )}
-      </select>
-    </div>
+    </>
   );
 }
 
