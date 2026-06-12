@@ -325,11 +325,11 @@ function Identicon({ seed, className, soft }) {
   // cells muddied yellow/orange to brown, so the pattern always runs
   // full strength — chip letters stay legible via text-shadow.
   return (
-    <svg className={className} viewBox="-0.45 -0.45 4.9 4.9" aria-hidden="true">
+    <svg className={className} viewBox="-0.45 -0.45 4.9 4.9" shapeRendering="crispEdges" aria-hidden="true">
       <rect x="-0.45" y="-0.45" width="4.9" height="4.9" fill="#101013" />
       <rect x="-0.45" y="-0.45" width="4.9" height="4.9" fill={color} opacity="0.16" />
       {cells.map(([r, c]) => (
-        <rect key={`${r}-${c}`} x={c} y={r} width="1.001" height="1.001" fill={color} opacity="0.92" />
+        <rect key={`${r}-${c}`} x={c} y={r} width="1" height="1" fill={color} opacity="0.92" />
       ))}
     </svg>
   );

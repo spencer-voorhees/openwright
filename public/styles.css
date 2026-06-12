@@ -378,7 +378,8 @@ a { color: var(--wp-link); }
 .ds-card:hover { border-color: var(--wp-accent-line); background: var(--wp-accent-tint); }
 .ds-card-head { display: flex; justify-content: space-between; align-items: baseline; }
 .ds-name { font-size: 16px; font-weight: 600; color: var(--wp-fg); }
-.ds-desc { font-size: 13px; color: var(--wp-fg-muted); line-height: 1.45; margin: 0; }
+.ds-desc { font-size: 13px; color: var(--wp-fg-muted); line-height: 1.45; margin: 0;
+  display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
 .ds-card-foot { margin-top: auto; }
 
 .ds-editor { display: flex; flex-direction: column; flex: 1 1 0; min-width: 0; height: 100%; }
