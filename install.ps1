@@ -1,4 +1,4 @@
-# openwright one-line bootstrap — Windows:
+﻿# openwright one-line bootstrap - Windows:
 #
 #   irm https://raw.githubusercontent.com/spencer-voorhees/openwright/main/install.ps1 | iex
 #
@@ -10,12 +10,12 @@ $repo = "https://github.com/spencer-voorhees/openwright"
 $dir  = if ($env:OPENWRIGHT_DIR) { $env:OPENWRIGHT_DIR } else { Join-Path $env:USERPROFILE "openwright" }
 
 if (Test-Path (Join-Path $dir ".git")) {
-  Write-Host "openwright already at $dir — updating"
+  Write-Host "openwright already at $dir - updating"
   git -C $dir pull --ff-only
 } elseif (Get-Command git -ErrorAction SilentlyContinue) {
   git clone $repo $dir
 } else {
-  Write-Host "git not found — downloading snapshot"
+  Write-Host "git not found - downloading snapshot"
   $zip = Join-Path $env:TEMP "openwright.zip"
   Invoke-WebRequest "$repo/archive/refs/heads/main.zip" -OutFile $zip
   $tmp = Join-Path $env:TEMP "openwright-unzip"

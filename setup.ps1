@@ -1,4 +1,4 @@
-# openwright setup — Windows (PowerShell). Interactive, idempotent,
+﻿# openwright setup - Windows (PowerShell). Interactive, idempotent,
 # zero-prerequisite.
 #
 #   powershell -ExecutionPolicy Bypass -File setup.ps1        guided
@@ -49,7 +49,7 @@ Step "Runtime: bun"
 $env:Path = "$env:USERPROFILE\.bun\bin;$env:USERPROFILE\.local\bin;$env:Path"
 if (Have "bun") { Ok "bun $(bun --version)" }
 else {
-  Note "bun is the only hard requirement — installing from bun.sh"
+  Note "bun is the only hard requirement - installing from bun.sh"
   powershell -c "irm bun.sh/install.ps1 | iex"
   Ok "bun $(bun --version)"
 }
@@ -75,7 +75,7 @@ if (Test-Path ".venv\Scripts\python.exe") {
   $pybin = ".venv\Scripts\python.exe"
   Ok "python ready in .venv"
 } else {
-  Note "skipped — decks still preview live; PDF/PPTX export unavailable"
+  Note "skipped - decks still preview live; PDF/PPTX export unavailable"
 }
 if ($pybin) {
   Note "fetching chromium for the exporters (one-time, ~120 MB)"
@@ -102,7 +102,7 @@ if (-not ($haveClaude -or $haveCopilot -or $haveCodex)) { Note "no compatible ag
 
 function InstallEngine($which) {
   switch ($which) {
-    "claude"  { bun add -g "@anthropic-ai/claude-code" | Out-Null; $script:haveClaude  = $true; Ok "claude installed — run 'claude' once to log in" }
+    "claude"  { bun add -g "@anthropic-ai/claude-code" | Out-Null; $script:haveClaude  = $true; Ok "claude installed - run 'claude' once to log in" }
     "copilot" { bun add -g "@github/copilot" | Out-Null;           $script:haveCopilot = $true; Ok "copilot installed" }
     "codex"   { bun add -g "@openai/codex" | Out-Null;             $script:haveCodex   = $true; Ok "codex installed" }
   }
@@ -120,7 +120,7 @@ if (-not ($haveClaude -or $haveCopilot -or $haveCodex)) {
   } else {
     Write-Host "  openwright needs at least one agent engine." -ForegroundColor White
     while (-not ($haveClaude -or $haveCopilot -or $haveCodex)) {
-      $pick = Read-Host "  Pick one to install — 1) Claude  2) Copilot  3) Codex"
+      $pick = Read-Host "  Pick one to install - 1) Claude  2) Copilot  3) Codex"
       switch ($pick) {
         "1" { InstallEngine "claude" }
         "2" { InstallEngine "copilot" }
@@ -131,7 +131,7 @@ if (-not ($haveClaude -or $haveCopilot -or $haveCodex)) {
   }
 }
 
-# Default engine for new workspaces — first available wins.
+# Default engine for new workspaces - first available wins.
 $defaultEngine = "claude"
 if (-not $haveClaude -and $haveCopilot) { $defaultEngine = "copilot" }
 elseif (-not $haveClaude -and -not $haveCopilot -and $haveCodex) { $defaultEngine = "codex" }
@@ -160,5 +160,5 @@ if ($haveCopilot) { Ok "copilot installed (auth: 'copilot login')" }
 if ($haveCodex)   { Ok "codex installed (auth: 'codex login status')" }
 Write-Host ""
 Write-Host "  Start it:   bun start" -ForegroundColor White
-Note "http://localhost:8090 — db + Oneshot design system seed on first boot."
+Note "http://localhost:8090 - db + Oneshot design system seed on first boot."
 Write-Host ""
