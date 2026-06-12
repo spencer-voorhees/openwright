@@ -320,14 +320,16 @@ function Identicon({ seed, className, soft }) {
       }
     }
   }
-  // soft = letters render on top (rail chips): pattern pulls back so
-  // the white glyphs stay crisp. Cards run it near full strength.
+  // The viewBox carries a margin so corner cells sit inside the
+  // tile's border radius instead of being shaved by it. Dimming the
+  // cells muddied yellow/orange to brown, so the pattern always runs
+  // full strength — chip letters stay legible via text-shadow.
   return (
-    <svg className={className} viewBox="0 0 4 4" aria-hidden="true">
-      <rect width="4" height="4" fill="#101013" />
-      <rect width="4" height="4" fill={color} opacity="0.17" />
+    <svg className={className} viewBox="-0.45 -0.45 4.9 4.9" aria-hidden="true">
+      <rect x="-0.45" y="-0.45" width="4.9" height="4.9" fill="#101013" />
+      <rect x="-0.45" y="-0.45" width="4.9" height="4.9" fill={color} opacity="0.16" />
       {cells.map(([r, c]) => (
-        <rect key={`${r}-${c}`} x={c} y={r} width="1" height="1" fill={color} opacity={soft ? 0.52 : 0.92} />
+        <rect key={`${r}-${c}`} x={c} y={r} width="1" height="1" rx="0.13" fill={color} opacity="0.92" />
       ))}
     </svg>
   );
@@ -344,13 +346,42 @@ function railStatus(ws) {
 }
 
 function Rail({ workspaces, activeSlug, view, onHome, onOpen, onNew, onOpenDesignSystems, onOpenSettings }) {
+  // Overflow affordance: when more chips exist than fit, fade the
+  // clipped edge (top/bottom on desktop, left/right on mobile) and
+  // keep the active workspace scrolled into view.
+  const podsRef = useRef(null);
+  const updateOvf = useCallback(() => {
+    const el = podsRef.current; if (!el) return;
+    let start = false, end = false;
+    if (el.scrollHeight > el.clientHeight + 2) {
+      start = el.scrollTop > 2;
+      end = el.scrollTop + el.clientHeight < el.scrollHeight - 2;
+    } else if (el.scrollWidth > el.clientWidth + 2) {
+      start = el.scrollLeft > 2;
+      end = el.scrollLeft + el.clientWidth < el.scrollWidth - 2;
+    }
+    el.classList.toggle("ovf-start", start);
+    el.classList.toggle("ovf-end", end);
+  }, []);
+  useEffect(() => {
+    updateOvf();
+    const el = podsRef.current; if (!el) return;
+    el.addEventListener("scroll", updateOvf, { passive: true });
+    const ro = new ResizeObserver(updateOvf);
+    ro.observe(el);
+    return () => { el.removeEventListener("scroll", updateOvf); ro.disconnect(); };
+  }, [updateOvf, workspaces.length]);
+  useEffect(() => {
+    podsRef.current?.querySelector(".pod-chip.active")
+      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [activeSlug, view]);
   return (
     <aside className="rail">
       <button className="rail-logo" onClick={onHome} title="Workspaces">
         <img src="/openpod-logo.svg?v=1" alt="openpod" />
       </button>
       <div className="rail-div" />
-      <div className="rail-pods">
+      <div className="rail-pods" ref={podsRef}>
         {workspaces.map((ws) => {
           const status = railStatus(ws);
           const cls = "pod-chip" + (ws.slug === activeSlug && view === "workspace" ? " active" : "");
