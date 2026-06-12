@@ -626,15 +626,16 @@ async function deleteComment(comment_id: string) {
 
 async function downloadArtifact(gen_id: string) {
   const g = db.query("SELECT * FROM generations WHERE id = ?").get(gen_id) as any;
-  if (!g || !g.artifact_path || !existsSync(g.artifact_path)) return err("no artifact", 404);
-  const name = g.artifact_path.split("/").pop()!;
+  const apath = resolveArtifact(g?.artifact_path);
+  if (!g || !apath || !existsSync(apath)) return err("no artifact", 404);
+  const name = apath.replace(/\\/g, "/").split("/").pop()!;
   const ext = name.split(".").pop()?.toLowerCase() || "";
-  const friendly = exportFilename(g.artifact_path, ext);
+  const friendly = exportFilename(apath, ext);
   const mime = ext === "html" ? "text/html; charset=utf-8"
              : ext === "pdf"  ? "application/pdf"
              : ext === "md"   ? "text/markdown; charset=utf-8"
              : "application/vnd.openxmlformats-officedocument.presentationml.presentation";
-  return new Response(Bun.file(g.artifact_path), {
+  return new Response(Bun.file(apath), {
     headers: {
       "content-type": mime,
       "content-disposition": `attachment; filename="${friendly}"`,
@@ -744,6 +745,7 @@ async function stopGen(gen_id: string) {
 async function exportPptxFromHtml(gen_id: string, mode: "dom" | "image" = "dom") {
   const g = db.query("SELECT * FROM generations WHERE id = ?").get(gen_id) as any;
   if (!g || !g.artifact_path) return err("no artifact", 404);
+  g.artifact_path = resolveArtifact(g.artifact_path);
   if (!/\.html$/i.test(g.artifact_path)) return err("export-pptx requires an HTML artifact", 400);
   if (!existsSync(g.artifact_path)) return err("artifact file missing on disk", 404);
   const script = mode === "image" ? HTML_PPTX_IMAGE_EXPORT : HTML_PPTX_EXPORT;
@@ -771,6 +773,20 @@ async function exportPptxFromHtml(gen_id: string, mode: "dom" | "image" = "dom")
 // "dit-theme-migration-untitled-deck-v22.pptx" so saved files identify
 // which workspace and artifact they belong to. Strips the "untitled"
 // artifact slug since it's the default and noise.
+// Absolute artifact paths go stale when the install moves (folder
+// rename, restored backup). Re-root the stable /workspaces/ suffix
+// onto the live WORKSPACE_ROOT before touching disk.
+function resolveArtifact(p: string | null): string | null {
+  if (!p) return p;
+  if (existsSync(p)) return p;
+  const m = String(p).replace(/\\/g, "/").match(/\/workspaces\/(.+)$/);
+  if (m) {
+    const alt = join(WORKSPACE_ROOT, m[1]!);
+    if (existsSync(alt)) return alt;
+  }
+  return p;
+}
+
 function exportFilename(artifact_path: string, kind: string): string {
   // Windows paths arrive with backslashes — normalize first or the
   // whole path collapses into the filename (C_Users... downloads).
@@ -789,6 +805,7 @@ function exportFilename(artifact_path: string, kind: string): string {
 async function downloadExport(gen_id: string, kind: "pdf" | "pptx" | "pptx-image") {
   const g = db.query("SELECT * FROM generations WHERE id = ?").get(gen_id) as any;
   if (!g || !g.artifact_path) return err("no artifact", 404);
+  g.artifact_path = resolveArtifact(g.artifact_path);
   const ext = kind === "pptx-image" ? ".image.pptx" : `.${kind}`;
   const out = g.artifact_path.replace(/\.html$/i, ext);
   if (!existsSync(out)) return err(`no exported ${kind}`, 404);
@@ -812,6 +829,7 @@ async function downloadExport(gen_id: string, kind: "pdf" | "pptx" | "pptx-image
 async function saveEdits(gen_id: string, req: Request) {
   const g = db.query("SELECT * FROM generations WHERE id = ?").get(gen_id) as any;
   if (!g || !g.artifact_path) return err("no artifact", 404);
+  g.artifact_path = resolveArtifact(g.artifact_path);
   if (!/\.html$/i.test(g.artifact_path)) return err("only HTML artifacts can be edited", 400);
   const body = await req.json() as { html?: string };
   if (!body.html || typeof body.html !== "string") return err("html body required", 400);
@@ -847,6 +865,7 @@ async function saveEdits(gen_id: string, req: Request) {
 async function exportPdf(gen_id: string) {
   const g = db.query("SELECT * FROM generations WHERE id = ?").get(gen_id) as any;
   if (!g || !g.artifact_path) return err("no artifact", 404);
+  g.artifact_path = resolveArtifact(g.artifact_path);
   if (!/\.html$/i.test(g.artifact_path)) return err("export-pdf requires an HTML artifact", 400);
   if (!existsSync(g.artifact_path)) return err("artifact file missing on disk", 404);
   if (!CHROME_BIN) return err("No Chrome/Chromium found — set OPENWRIGHT_CHROME or run setup to install playwright chromium", 500);

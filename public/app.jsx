@@ -1180,6 +1180,13 @@ function ArtifactSelector({ ws, artifacts, activeArtifactId, onSelect, onChange 
 function FilesPanel({ ws, files, notes, generations, artifacts, activeArtifactId,
                        onSelectArtifact, onBack, onChange, onActivate, onOpenAgent,
                        agentOpen, onToggleAgent }) {
+  // Expanded = the artifact card (and its section header) escape the
+  // standard measure to the full window; remembered per browser.
+  const [expanded, setExpanded] = useState(() => localStorage.getItem("ow-preview-expanded") === "1");
+  const toggleExpanded = () => setExpanded((x) => {
+    localStorage.setItem("ow-preview-expanded", x ? "0" : "1");
+    return !x;
+  });
   const [over, setOver] = useState(false);
   const fileInput = useRef(null);
   const [noteModal, setNoteModal] = useState(false);
@@ -1241,12 +1248,12 @@ function FilesPanel({ ws, files, notes, generations, artifacts, activeArtifactId
         <button className={"btn btn-primary agent-open-btn" + (agentOpen ? " on" : "")}
                 title={agentOpen ? "Close the agent panel" : "Open the agent panel"}
                 onClick={onToggleAgent}>
-          <Icon name="bot" />
+          {(status === "running" || status === "queued")
+            ? <Spinner />
+            : status === "awaiting_user"
+              ? <Icon name="message-circle-question" />
+              : <Icon name="bot" />}
           Agent
-          {(status === "running" || status === "queued" || status === "awaiting_user") && (
-            <span className={"pdot " + (STATUS[status]?.dot || "s-idle") + " pulse"}
-                  style={{ width: 7, height: 7, borderRadius: 999, display: "inline-block" }} />
-          )}
         </button>
       </div>
       <div className="files-body"
@@ -1254,12 +1261,13 @@ function FilesPanel({ ws, files, notes, generations, artifacts, activeArtifactId
         onDragLeave={() => setOver(false)}
         onDrop={(e) => { e.preventDefault(); setOver(false); upload(e.dataTransfer.files); }}>
 
-        <div className="sec-label" style={{ marginTop: 0 }}>
+        <div className={"sec-label" + (expanded ? " expanded" : "")} style={{ marginTop: 0 }}>
           <span className="eyebrow">Artifacts</span>
           {allArtifacts.length > 0 && <span className="fmeta">version controlled</span>}
         </div>
         {allArtifacts.length > 0 ? (
           <ArtifactCard
+            expanded={expanded} onToggleExpanded={toggleExpanded}
             artifacts={allArtifacts}
             runActive={wsRunActive}
             onOpen={(g) => onActivate(g.id)}
@@ -1365,7 +1373,7 @@ function NoteRow({ note, onDelete }) {
   );
 }
 
-function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted }) {
+function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted, expanded, onToggleExpanded }) {
   const [open, setOpen] = useState(false);
   // Current slide inside the preview iframe (0-based) — the deck shell
   // broadcasts workpod-slide messages on every slide change so the
@@ -1384,13 +1392,7 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted })
     localStorage.setItem("ow-preview-hidden", h ? "0" : "1");
     return !h;
   });
-  // Expanded = the card escapes the 1560 measure and uses the full
-  // window width; for working a big monitor without going fullscreen.
-  const [expanded, setExpanded] = useState(() => localStorage.getItem("ow-preview-expanded") === "1");
-  const toggleExpanded = () => setExpanded((x) => {
-    localStorage.setItem("ow-preview-expanded", x ? "0" : "1");
-    return !x;
-  });
+
   useEffect(() => {
     const onMsg = (e) => {
       if (e?.data?.type !== "workpod-slide") return;
@@ -1465,7 +1467,7 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted })
           <div className="preview-controls">
             <button className="pc-btn expand-toggle"
                     title={expanded ? "Fit to the standard width" : "Expand to the full window"}
-                    onClick={toggleExpanded}>
+                    onClick={onToggleExpanded}>
               <Icon name={expanded ? "minimize-2" : "maximize-2"} />
             </button>
             <button className="pc-btn"
@@ -2021,32 +2023,6 @@ function AgentDrawer({ ws, generation, open, onOpen, onClose, busy, files, notes
   );
 }
 
-// Copilot has no ambient auth signal (the CLI lacks a status
-// command), so when it's the workspace's engine the shelf offers an
-// inline check before the user burns a run on an auth failure.
-function CopilotAuthChip() {
-  const [state, setState] = useState("idle");   // idle | checking | ok | bad
-  const [detail, setDetail] = useState("");
-  if (state === "ok")  return <span className="auth-chip is-ok" title={detail}><Icon name="shield-check" /> Copilot signed in</span>;
-  if (state === "bad") return <span className="auth-chip is-bad" title={detail}><Icon name="shield-alert" /> Not signed in. Run 'copilot login'</span>;
-  return (
-    <button className="auth-chip" disabled={state === "checking"}
-            title="Runs one minimal Copilot request to confirm auth"
-            onClick={async () => {
-              setState("checking");
-              try {
-                const r = await postJson("/api/agents/copilot/verify", {});
-                setDetail(r.detail || "");
-                setState(r.ok ? "ok" : "bad");
-                showToast(r.detail || (r.ok ? "Copilot signed in" : "Copilot not signed in"), r.ok ? "ok" : "bad");
-              } catch (e) { setDetail(e.message); setState("bad"); }
-            }}>
-      {state === "checking" ? <Spinner /> : <Icon name="shield-question" />}
-      {state === "checking" ? "Checking auth…" : "Verify Copilot auth"}
-    </button>
-  );
-}
-
 function AgentPanelBody({ ws, generation, busy, files, notes, onGenerate, onReply, onSteer, hasPrior, onClose }) {
   const [messages, setMessages] = useState([]);
   const [composing, setComposing] = useState("");
@@ -2138,7 +2114,6 @@ function AgentPanelBody({ ws, generation, busy, files, notes, onGenerate, onRepl
             })()}
           </div>
         </div>
-        {!hasActive && (ws?.agent_engine === "copilot") && <CopilotAuthChip />}
         {hasActive && (
           <button className="icon-btn stop-btn" title="Stop this run (you can retry after)"
                   onClick={async () => {
@@ -2329,6 +2304,16 @@ function ExportButton({ genId, kind, onDone }) {
     try {
       const d = await postJson(`/api/generations/${genId}/export-${kind}`);
       setDone({ path: d.path });
+      // Kick the download immediately — rendering takes long enough
+      // that users click away, and the file shouldn't need a second
+      // visit to collect.
+      const a = document.createElement("a");
+      a.href = `/api/generations/${genId}/download-${kind}`;
+      a.download = "";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      showToast(`${meta.busy} exported — downloading`);
       onDone?.();
     } catch (e) {
       alert(`export ${kind} failed: ${e.message}`);
@@ -2400,16 +2385,9 @@ function DesignSystems({ activeSystemId, onSelect, onBack }) {
             <h1 className="dash-title">Design systems</h1>
             <p className="dash-sub">Workspace-agnostic CSS bundles. Reference one from any workspace; edit here once, all referencing decks update on next reload.</p>
           </div>
-          <button className="btn btn-primary"
-            onClick={async () => {
-              const name = prompt("New design system name:");
-              if (!name || !name.trim()) return;
-              const d = await postJson("/api/design-systems", { name: name.trim() });
-              onSelect?.(d.design_system.id);
-              refresh();
-            }}>
-            <Icon name="plus" /> New
-          </button>
+          {/* Creation is omitted until prompting an agent to build a
+              design system is actually wired up — a bare name prompt
+              that clones Oneshot read as "does nothing". */}
         </div>
         <div className="ds-grid">
           {systems.map((s) => (
