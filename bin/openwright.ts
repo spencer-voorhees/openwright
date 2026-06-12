@@ -35,6 +35,26 @@ function pid(): number | null {
   } catch { return null; }
 }
 
+// Find the listener's pid by port — needed on Windows where the
+// detached `start` launch can't hand us a pid directly.
+function pidByPort(): number | null {
+  try {
+    if (platform() === "win32") {
+      const out = Bun.spawnSync({ cmd: ["netstat", "-ano", "-p", "tcp"] }).stdout.toString();
+      for (const line of out.split("\n")) {
+        if (line.includes(`:${port()} `) && /LISTENING/i.test(line)) {
+          const p = Number(line.trim().split(/\s+/).pop());
+          if (p) return p;
+        }
+      }
+    } else {
+      const out = Bun.spawnSync({ cmd: ["lsof", `-tiTCP:${port()}`, "-sTCP:LISTEN"] }).stdout.toString().trim();
+      if (out) return Number(out.split("\n")[0]);
+    }
+  } catch {}
+  return null;
+}
+
 async function healthy(): Promise<boolean> {
   try {
     const r = await fetch(`${HEALTH_URL}/api/workspaces`, { signal: AbortSignal.timeout(1500) });
@@ -48,32 +68,50 @@ async function start(foreground = false, noOpen = false) {
     const proc = Bun.spawn({ cmd: [process.execPath, "run", join(ROOT, "src", "server.ts")], cwd: ROOT, stdout: "inherit", stderr: "inherit" });
     process.exit(await proc.exited);
   }
-  // The server writes the logfile through its own fd, so this CLI
-  // can exit immediately after the health check.
-  const fd = openSync(LOGFILE, "a");
-  const proc = Bun.spawn({
-    cmd: [process.execPath, "run", join(ROOT, "src", "server.ts")],
-    cwd: ROOT,
-    stdout: fd, stderr: fd,
-  });
-  proc.unref();
-  writeFileSync(PIDFILE, String(proc.pid));
+  // The server writes the logfile through its own fd / shell
+  // redirection, so this CLI can exit right after the health check.
+  let spawnedPid: number | null = null;
+  if (platform() === "win32") {
+    // cmd `start` detaches the server from this process tree —
+    // otherwise it can die when the CLI (or setup) exits.
+    const server = join(ROOT, "src", "server.ts");
+    Bun.spawnSync({
+      cmd: ["cmd", "/c",
+        `start "" /b cmd /c ""${process.execPath}" run "${server}" >> "${LOGFILE}" 2>&1"`],
+      cwd: ROOT,
+    });
+  } else {
+    const fd = openSync(LOGFILE, "a");
+    const proc = Bun.spawn({
+      cmd: [process.execPath, "run", join(ROOT, "src", "server.ts")],
+      cwd: ROOT,
+      stdout: fd, stderr: fd,
+    });
+    proc.unref();
+    spawnedPid = proc.pid;
+    writeFileSync(PIDFILE, String(proc.pid));
+  }
   for (let i = 0; i < 40; i++) {
     if (await healthy()) {
-      console.log(`openwright running at ${URL_}  (pid ${proc.pid}, logs: openwright logs)`);
+      if (!spawnedPid) {
+        spawnedPid = pidByPort();
+        if (spawnedPid) writeFileSync(PIDFILE, String(spawnedPid));
+      }
+      console.log(`openwright running at ${URL_}${spawnedPid ? `  (pid ${spawnedPid}` : "  ("} logs: openwright logs)`);
       if (!noOpen) openBrowser();
       process.exit(0);
     }
     await new Promise((r) => setTimeout(r, 250));
   }
-  console.error(`server did not come up — check ${LOGFILE}`);
+  console.error(`server did not come up — check ${LOGFILE} (openwright logs)`);
   process.exit(1);
 }
 
 function stop() {
-  const p = pid();
-  if (!p) { console.log("not running (no live pid)"); try { unlinkSync(PIDFILE); } catch {} return; }
-  process.kill(p);
+  const p = pid() || pidByPort();
+  if (!p) { console.log("not running"); try { unlinkSync(PIDFILE); } catch {} return; }
+  if (platform() === "win32") Bun.spawnSync({ cmd: ["taskkill", "/PID", String(p), "/T", "/F"], stdout: "ignore", stderr: "ignore" });
+  else process.kill(p);
   try { unlinkSync(PIDFILE); } catch {}
   console.log(`stopped (pid ${p})`);
 }
