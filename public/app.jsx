@@ -1997,11 +1997,14 @@ function AgentPanelBody({ ws, generation, busy, files, notes, onGenerate, onRepl
       <div className="agent-head">
         <div className="agent-avatar"><Icon name="bot" /></div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="agent-title">Agent</div>
-          <div className="agent-status">
+          <div className="agent-title">
+            Agent · {({ claude: "Claude", copilot: "Copilot", codex: "Codex" })[ws?.agent_engine] || ws?.agent_engine || "Claude"}
+          </div>
+          <div className="agent-status" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
             {hasActive
               ? <><span className={"pdot " + (STATUS[status]?.dot || "s-idle") + " pulse"} style={{ width: 7, height: 7, borderRadius: 999, display: "inline-block" }} />{STATUS[status]?.label || status}</>
               : <span style={{ opacity: 0.7 }}>idle</span>}
+            {ws?.agent_model ? <span style={{ opacity: 0.7 }}> · {ws.agent_model}</span> : null}
           </div>
         </div>
         {hasActive && (
