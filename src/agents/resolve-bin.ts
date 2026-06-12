@@ -2,8 +2,9 @@
 // user's login shell (launchd, cron, npm-prefix installs).
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { homedir } from "node:os";
 
-const HOME = process.env.HOME || "";
+const HOME = homedir();
 
 const EXTRA_DIRS = [
   join(HOME, ".local", "bin"),
@@ -25,8 +26,13 @@ export function resolveBin(name: string, envOverride?: string): string {
     const proc = Bun.spawnSync({ cmd: ["npm", "prefix", "-g"], stdout: "pipe", stderr: "pipe" });
     const prefix = new TextDecoder().decode(proc.stdout).trim();
     if (prefix) {
-      const p = join(prefix, "bin", name);
-      if (existsSync(p)) return p;
+      for (const cand of [
+        join(prefix, "bin", name),                       // unix layout
+        join(prefix, name + ".cmd"),                     // windows layout
+        join(prefix, name),
+      ]) {
+        if (existsSync(cand)) return cand;
+      }
     }
   } catch {}
   return name; // let spawn fail with a clear ENOENT

@@ -4,7 +4,8 @@ import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
-const DB_PATH = process.env.OPENPOD_DB || new URL("../openpod.db", import.meta.url).pathname;
+import { fileURLToPath } from "node:url";
+const DB_PATH = process.env.OPENPOD_DB || fileURLToPath(new URL("../openpod.db", import.meta.url));
 mkdirSync(dirname(DB_PATH), { recursive: true });
 
 export const db = new Database(DB_PATH, { create: true });
@@ -16,9 +17,7 @@ CREATE TABLE IF NOT EXISTS workspaces (
   id          INTEGER PRIMARY KEY,
   slug        TEXT UNIQUE NOT NULL,
   name        TEXT NOT NULL,
-  created_at  INTEGER NOT NULL,
-  use_opus    INTEGER NOT NULL DEFAULT 0,
-  validate    INTEGER NOT NULL DEFAULT 1
+  created_at  INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS files (
@@ -42,8 +41,6 @@ CREATE TABLE IF NOT EXISTS generations (
   error               TEXT,
   artifact_path       TEXT,
   artifact_version    INTEGER,
-  validator_iteration INTEGER NOT NULL DEFAULT 0,
-  validator_verdict   TEXT,
   FOREIGN KEY(workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
 );
 
@@ -53,19 +50,6 @@ CREATE TABLE IF NOT EXISTS messages (
   role          TEXT NOT NULL,
   content       TEXT NOT NULL,
   ts            INTEGER NOT NULL,
-  FOREIGN KEY(generation_id) REFERENCES generations(id) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS validations (
-  id            INTEGER PRIMARY KEY,
-  generation_id INTEGER NOT NULL,
-  iteration     INTEGER NOT NULL DEFAULT 1,
-  peer          TEXT NOT NULL,    -- 'codex' | 'qwen' | 'claude'
-  verdict       TEXT NOT NULL,    -- 'approve' | 'iterate' | 'abort' | 'skipped' | 'error'
-  reasoning     TEXT,
-  raw           TEXT,
-  duration_ms   INTEGER,
-  ran_at        INTEGER NOT NULL,
   FOREIGN KEY(generation_id) REFERENCES generations(id) ON DELETE CASCADE
 );
 
@@ -109,7 +93,6 @@ CREATE TABLE IF NOT EXISTS settings (
 CREATE INDEX IF NOT EXISTS idx_files_ws    ON files(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_gen_ws      ON generations(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_msg_gen     ON messages(generation_id);
-CREATE INDEX IF NOT EXISTS idx_val_gen     ON validations(generation_id);
 CREATE INDEX IF NOT EXISTS idx_art_ws      ON artifacts(workspace_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_art_ws_slug ON artifacts(workspace_id, slug);
 `);
@@ -123,8 +106,6 @@ function addColumnIfMissing(table: string, column: string, ddl: string) {
     db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
   }
 }
-addColumnIfMissing("workspaces",  "use_opus",            "INTEGER NOT NULL DEFAULT 0");
-addColumnIfMissing("workspaces",  "validate",            "INTEGER NOT NULL DEFAULT 1");
 // Engine drives both the agent prompt and the build pipeline:
 //   'html' (new default) - agent writes HTML/CSS, live preview, DOM-walking pptx export
 //   'md'                 - markdown via md-engine (pandoc)
@@ -144,8 +125,6 @@ addColumnIfMissing("workspaces",  "agent_model",         "TEXT NOT NULL DEFAULT 
 // inlined into the agent prompt so the same workspace inputs produce
 // different decks depending on the chosen audience.
 addColumnIfMissing("workspaces",  "persona",             "TEXT NOT NULL DEFAULT 'terse-technical'");
-addColumnIfMissing("generations", "validator_iteration", "INTEGER NOT NULL DEFAULT 0");
-addColumnIfMissing("generations", "validator_verdict",   "TEXT");
 // 'generating' | 'validating' | 'synthesizing' — surfaced in the UI so
 // the workspace card can show what the agent is actively doing during
 // a run rather than just 'running'. NULL outside an active phase.

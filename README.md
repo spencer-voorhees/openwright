@@ -11,14 +11,26 @@ Codex CLI. Engine and model are selectable per workspace.
 
 ## Quick start
 
+macOS / Linux:
+
 ```sh
 git clone <this repo> && cd openpod
 bash setup.sh        # bun + js deps + python exporters + agent detection
 bun start            # http://localhost:8090
 ```
 
-`setup.sh` is idempotent. Pass `OPENPOD_INSTALL_AGENTS=1` to let it
-`npm install -g` the Copilot/Codex CLIs it doesn't find.
+Windows (PowerShell):
+
+```powershell
+git clone <this repo>; cd openpod
+powershell -ExecutionPolicy Bypass -File setup.ps1
+bun start
+```
+
+Both scripts are idempotent. Set `OPENPOD_INSTALL_AGENTS=1` to let them
+`npm install -g` the Copilot/Codex CLIs they don't find. PDF export
+resolves Chrome from playwright's chromium, puppeteer's cache, or a
+system Chrome/Edge install (override with `OPENPOD_CHROME`).
 
 ### Agent auth (any one is enough)
 

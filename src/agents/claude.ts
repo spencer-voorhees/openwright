@@ -7,6 +7,8 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { AgentAdapter, AgentRunOpts, AgentResult } from "./types";
 import { resolveBin } from "./resolve-bin";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 const DEFAULT_MODEL = process.env.OPENPOD_CLAUDE_MODEL || "claude-sonnet-4-6";
 const MAX_TURNS = parseInt(process.env.OPENPOD_MAX_TURNS || "30", 10);
@@ -15,7 +17,7 @@ const MAX_TURNS = parseInt(process.env.OPENPOD_MAX_TURNS || "30", 10);
 function summarizeToolInput(name: string, input: any): string {
   if (!input || typeof input !== "object") return "";
   const lc = name.toLowerCase();
-  const home = process.env.HOME || "";
+  const home = homedir();
   const short = (p: any) => String(p || "").replace(home, "~");
   if (lc === "read" || lc === "write" || lc === "edit") return short(input.file_path || input.path);
   if (lc === "bash") return String(input.command || "").slice(0, 200);
@@ -54,7 +56,7 @@ export const claudeAdapter: AgentAdapter = {
     // The SDK can also ride a logged-in Claude Code credential —
     // ~/.claude/.credentials.json on Linux, Keychain on macOS. A
     // resolvable claude binary is the practical signal for the latter.
-    const credPath = `${process.env.HOME}/.claude/.credentials.json`;
+    const credPath = join(homedir(), ".claude", ".credentials.json");
     try {
       if (await Bun.file(credPath).exists()) return { ok: true, detail: `Claude Code login · ${DEFAULT_MODEL}` };
     } catch {}

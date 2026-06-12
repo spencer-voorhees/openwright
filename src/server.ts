@@ -89,33 +89,28 @@ async function listWorkspaces() {
              ORDER BY completed_at DESC LIMIT 1) AS latest_done_at,
            (SELECT id FROM generations
              WHERE workspace_id = w.id
-               AND status IN ('queued','running','validating','awaiting_user')
+               AND status IN ('queued','running','awaiting_user')
              ORDER BY id DESC LIMIT 1) AS active_gen_id,
            (SELECT status FROM generations WHERE id = (
              SELECT id FROM generations
               WHERE workspace_id = w.id
-                AND status IN ('queued','running','validating','awaiting_user')
+                AND status IN ('queued','running','awaiting_user')
               ORDER BY id DESC LIMIT 1)) AS active_gen_status,
            (SELECT phase FROM generations WHERE id = (
              SELECT id FROM generations
               WHERE workspace_id = w.id
-                AND status IN ('queued','running','validating','awaiting_user')
+                AND status IN ('queued','running','awaiting_user')
               ORDER BY id DESC LIMIT 1)) AS active_gen_phase,
            (SELECT started_at FROM generations WHERE id = (
              SELECT id FROM generations
               WHERE workspace_id = w.id
-                AND status IN ('queued','running','validating','awaiting_user')
+                AND status IN ('queued','running','awaiting_user')
               ORDER BY id DESC LIMIT 1)) AS active_gen_started_at,
            (SELECT MAX(ts) FROM messages WHERE generation_id = (
              SELECT id FROM generations
               WHERE workspace_id = w.id
-                AND status IN ('queued','running','validating','awaiting_user')
-              ORDER BY id DESC LIMIT 1)) AS active_gen_last_message_at,
-           (SELECT validator_iteration FROM generations WHERE id = (
-             SELECT id FROM generations
-              WHERE workspace_id = w.id
-                AND status IN ('queued','running','validating','awaiting_user')
-              ORDER BY id DESC LIMIT 1)) AS active_gen_iter
+                AND status IN ('queued','running','awaiting_user')
+              ORDER BY id DESC LIMIT 1)) AS active_gen_last_message_at
     FROM workspaces w ORDER BY created_at DESC
   `).all();
   return json({ workspaces: rows });
@@ -213,8 +208,8 @@ async function designSystemCss(id: string) {
 }
 
 async function createWorkspace(req: Request) {
-  const { name, use_opus, validate, engine, theme, design_system_id, agent_engine } = await req.json() as
-    { name: string; use_opus?: boolean; validate?: boolean; engine?: string; theme?: string; design_system_id?: number; agent_engine?: string };
+  const { name, engine, theme, design_system_id, agent_engine } = await req.json() as
+    { name: string; engine?: string; theme?: string; design_system_id?: number; agent_engine?: string };
   if (!name || !name.trim()) return err("name required");
   const slug = slugify(name.trim());
   const now = Date.now();
@@ -243,8 +238,8 @@ async function createWorkspace(req: Request) {
   const fallbackEng = ADAPTERS.some((a) => a.id === settingEng) ? settingEng : DEFAULT_ENGINE;
   const agentEng = agent_engine && ADAPTERS.some((a) => a.id === agent_engine) ? agent_engine : fallbackEng;
   const agentModel = getSetting("default_agent_model", "");
-  db.run("INSERT INTO workspaces(slug, name, created_at, use_opus, validate, engine, theme, design_system_id, agent_engine, agent_model) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-         [slug, name.trim(), now, use_opus ? 1 : 0, validate === false ? 0 : 1, eng, th, dsId, agentEng, agentModel]);
+  db.run("INSERT INTO workspaces(slug, name, created_at, engine, theme, design_system_id, agent_engine, agent_model) VALUES(?, ?, ?, ?, ?, ?, ?, ?)",
+         [slug, name.trim(), now, eng, th, dsId, agentEng, agentModel]);
   workspaceDir(slug);
   return json({ workspace: workspaceBySlug(slug) }, 201);
 }
@@ -252,11 +247,9 @@ async function createWorkspace(req: Request) {
 async function updateWorkspace(slug: string, req: Request) {
   const w = workspaceBySlug(slug);
   if (!w) return err("not found", 404);
-  const body = await req.json() as { use_opus?: boolean; validate?: boolean; name?: string; engine?: string; theme?: string; design_system_id?: number; persona?: string; agent_engine?: string; agent_model?: string };
+  const body = await req.json() as { name?: string; engine?: string; theme?: string; design_system_id?: number; persona?: string; agent_engine?: string; agent_model?: string };
   const sets: string[] = [];
   const vals: any[] = [];
-  if (body.use_opus !== undefined) { sets.push("use_opus = ?"); vals.push(body.use_opus ? 1 : 0); }
-  if (body.validate !== undefined) { sets.push("validate = ?"); vals.push(body.validate ? 1 : 0); }
   if (body.engine !== undefined && KNOWN_ENGINES.has(body.engine)) {
     sets.push("engine = ?"); vals.push(body.engine);
   }
@@ -296,8 +289,7 @@ async function getWorkspace(slug: string) {
   ).all(w.id);
   const generations = db.query(
     `SELECT g.id, g.prompt, g.status, g.started_at, g.completed_at, g.error,
-            g.artifact_path, g.artifact_version, g.artifact_id,
-            g.validator_iteration, g.validator_verdict, g.phase,
+            g.artifact_path, g.artifact_version, g.artifact_id, g.phase,
             (SELECT MAX(ts) FROM messages WHERE generation_id = g.id) AS last_message_at
      FROM generations g WHERE g.workspace_id = ? ORDER BY g.id DESC`).all(w.id);
   for (const g of generations as any[]) {
@@ -512,9 +504,7 @@ async function getGeneration(gen_id: string) {
   const g = db.query("SELECT * FROM generations WHERE id = ?").get(gen_id) as any;
   if (!g) return err("not found", 404);
   const messages = db.query("SELECT * FROM messages WHERE generation_id = ? ORDER BY ts").all(g.id);
-  const validations = db.query(
-    "SELECT * FROM validations WHERE generation_id = ? ORDER BY iteration, ran_at").all(g.id);
-  return json({ generation: g, messages, validations });
+  return json({ generation: g, messages });
 }
 
 async function replyToAgent(gen_id: string, req: Request) {
@@ -623,24 +613,70 @@ async function downloadArtifact(gen_id: string) {
   });
 }
 
-// Prefer the lightweight chrome-headless-shell binary installed by
-// puppeteer; fall back to full Chrome.app if it's not present.
-const CHROME_HEADLESS_SHELL = (() => {
-  const base = `${process.env.HOME}/.cache/puppeteer/chrome-headless-shell`;
-  if (!existsSync(base)) return null;
-  // Pick the highest-numbered mac_arm dir.
+// Find a Chrome/Chromium binary for PDF printing, cross-platform.
+// Order: explicit env, playwright's chromium (setup.sh installs it),
+// puppeteer's chrome-headless-shell, then system installs.
+import { homedir, platform } from "node:os";
+function findChromeCandidates(): { bin: string; headlessShell: boolean }[] {
+  const out: { bin: string; headlessShell: boolean }[] = [];
+  const home = homedir();
+  if (process.env.OPENPOD_CHROME) out.push({ bin: process.env.OPENPOD_CHROME, headlessShell: false });
+  const plat = platform();   // 'darwin' | 'win32' | 'linux'
+
+  // playwright cache
+  const pwRoot = plat === "darwin" ? join(home, "Library", "Caches", "ms-playwright")
+    : plat === "win32" ? join(process.env.LOCALAPPDATA || join(home, "AppData", "Local"), "ms-playwright")
+    : join(home, ".cache", "ms-playwright");
   try {
     const fs = require("node:fs");
-    const dirs = fs.readdirSync(base).filter((n: string) => n.startsWith("mac_"));
-    dirs.sort();
-    const dir = dirs[dirs.length - 1];
-    if (!dir) return null;
-    const bin = `${base}/${dir}/chrome-headless-shell-mac-arm64/chrome-headless-shell`;
-    return existsSync(bin) ? bin : null;
-  } catch { return null; }
-})();
-const CHROME_APP = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-const CHROME_BIN = CHROME_HEADLESS_SHELL || CHROME_APP;
+    for (const dir of (fs.readdirSync(pwRoot) as string[]).sort().reverse()) {
+      if (dir.startsWith("chromium_headless_shell-")) {
+        for (const rel of [
+          ["chrome-mac", "headless_shell"],
+          ["chrome-win", "headless_shell.exe"],
+          ["chrome-linux", "headless_shell"],
+        ]) out.push({ bin: join(pwRoot, dir, ...rel), headlessShell: true });
+      } else if (dir.startsWith("chromium-")) {
+        for (const rel of [
+          ["chrome-mac", "Chromium.app", "Contents", "MacOS", "Chromium"],
+          ["chrome-win", "chrome.exe"],
+          ["chrome-linux", "chrome"],
+        ]) out.push({ bin: join(pwRoot, dir, ...rel), headlessShell: false });
+      }
+    }
+  } catch {}
+
+  // puppeteer chrome-headless-shell cache
+  try {
+    const fs = require("node:fs");
+    const base = join(home, ".cache", "puppeteer", "chrome-headless-shell");
+    for (const dir of (fs.readdirSync(base) as string[]).sort().reverse()) {
+      for (const rel of [
+        ["chrome-headless-shell-mac-arm64", "chrome-headless-shell"],
+        ["chrome-headless-shell-mac-x64", "chrome-headless-shell"],
+        ["chrome-headless-shell-win64", "chrome-headless-shell.exe"],
+        ["chrome-headless-shell-linux64", "chrome-headless-shell"],
+      ]) out.push({ bin: join(base, dir, ...rel), headlessShell: true });
+    }
+  } catch {}
+
+  // system installs
+  out.push(
+    { bin: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", headlessShell: false },
+    { bin: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe", headlessShell: false },
+    { bin: "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe", headlessShell: false },
+    { bin: "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe", headlessShell: false },
+    { bin: "/usr/bin/google-chrome", headlessShell: false },
+    { bin: "/usr/bin/chromium", headlessShell: false },
+  );
+  return out;
+}
+// Python for the PPTX exporters: python3 on unix, python/py on Windows.
+const PYTHON_BIN = process.env.OPENPOD_PYTHON
+  || Bun.which("python3") || Bun.which("python") || Bun.which("py") || "python3";
+
+const CHROME = findChromeCandidates().find((c) => existsSync(c.bin)) || null;
+const CHROME_BIN = CHROME?.bin || "";
 
 // Export the HTML deck behind a generation to a PDF using Chrome
 // headless. The deck-shell.js has a built-in @media print stylesheet
@@ -660,7 +696,7 @@ const HTML_PPTX_IMAGE_EXPORT = join(import.meta.dir, "..", "html-engine", "expor
 async function stopGen(gen_id: string) {
   const g = db.query("SELECT * FROM generations WHERE id = ?").get(gen_id) as any;
   if (!g) return err("generation not found", 404);
-  if (!["queued", "running", "validating", "awaiting_user"].includes(g.status)) {
+  if (!["queued", "running", "awaiting_user"].includes(g.status)) {
     return err("generation is not active", 400);
   }
   const inMemory = stopGeneration(Number(gen_id));
@@ -678,7 +714,7 @@ async function exportPptxFromHtml(gen_id: string, mode: "dom" | "image" = "dom")
   if (!existsSync(g.artifact_path)) return err("artifact file missing on disk", 404);
   const script = mode === "image" ? HTML_PPTX_IMAGE_EXPORT : HTML_PPTX_EXPORT;
   if (!existsSync(script)) return err(`html-engine ${mode} exporter not found`, 500);
-  const m = String(g.artifact_path).match(/\/workspaces\/(.+)$/);
+  const m = String(g.artifact_path).replace(/\\/g, "/").match(/\/workspaces\/(.+)$/);
   if (!m) return err("could not derive preview path", 500);
   const previewUrl = `http://127.0.0.1:${PORT}/preview/${m[1]}`;
   // image mode lands in a separate .image.pptx so it doesn't clobber
@@ -686,7 +722,7 @@ async function exportPptxFromHtml(gen_id: string, mode: "dom" | "image" = "dom")
   const suffix = mode === "image" ? ".image.pptx" : ".pptx";
   const outPath = g.artifact_path.replace(/\.html$/i, suffix);
   const proc = Bun.spawn({
-    cmd: ["python3", script, "--url", previewUrl, "--out", outPath],
+    cmd: [PYTHON_BIN, script, "--url", previewUrl, "--out", outPath],
     stderr: "pipe", stdout: "pipe",
   });
   const exitCode = await proc.exited;
@@ -758,10 +794,10 @@ async function saveEdits(gen_id: string, req: Request) {
   const ins = db.run(
     `INSERT INTO generations
        (workspace_id, artifact_id, prompt, status, phase, started_at, completed_at,
-        artifact_path, artifact_version, validator_verdict, validator_iteration)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        artifact_path, artifact_version)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [g.workspace_id, g.artifact_id, "[edit] manual text edits", "done", "done",
-     now, now, newPath, nextV, null, 0],
+     now, now, newPath, nextV],
   );
   return json({
     ok: true,
@@ -776,9 +812,9 @@ async function exportPdf(gen_id: string) {
   if (!g || !g.artifact_path) return err("no artifact", 404);
   if (!/\.html$/i.test(g.artifact_path)) return err("export-pdf requires an HTML artifact", 400);
   if (!existsSync(g.artifact_path)) return err("artifact file missing on disk", 404);
-  if (!existsSync(CHROME_BIN)) return err("Chrome not found at expected path", 500);
+  if (!CHROME_BIN) return err("No Chrome/Chromium found — set OPENPOD_CHROME or run setup to install playwright chromium", 500);
 
-  const m = String(g.artifact_path).match(/\/workspaces\/(.+)$/);
+  const m = String(g.artifact_path).replace(/\\/g, "/").match(/\/workspaces\/(.+)$/);
   if (!m) return err("could not derive preview path", 500);
   const previewUrl = `http://127.0.0.1:${PORT}/preview/${m[1]}`;
   const outPath = g.artifact_path.replace(/\.html$/i, ".pdf");
@@ -787,7 +823,7 @@ async function exportPdf(gen_id: string) {
   // app needs --headless=new. Decide based on which one we resolved.
   // Use Bun.spawn (async) so the server can keep serving other
   // requests during the ~15s chrome takes to print.
-  const usingShell = CHROME_BIN === CHROME_HEADLESS_SHELL;
+  const usingShell = !!CHROME?.headlessShell;
   const proc = Bun.spawn({
     cmd: [
       CHROME_BIN,

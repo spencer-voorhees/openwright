@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "bun run src/server.ts",
     "start": "bun run src/server.ts",
-    "setup": "bash setup.sh"
+    "setup": "bash setup.sh",
+    "setup:win": "powershell -ExecutionPolicy Bypass -File setup.ps1"
   },
   "type": "module",
   "dependencies": {

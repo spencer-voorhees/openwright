@@ -131,11 +131,9 @@ function useTick(intervalMs = 1000) {
 // as it grows past the comfort threshold.
 const PHASE_LABEL = {
   generating:   "generating",
-  validating:   "validating",
-  synthesizing: "synthesizing",
 };
 
-function Heartbeat({ startedAt, lastMessageAt, iteration, maxIter = 5, phase = null, compact = false }) {
+function Heartbeat({ startedAt, lastMessageAt, phase = null, compact = false }) {
   useTick(1000);
   const now = Date.now();
   const runMs   = startedAt ? now - startedAt : 0;
@@ -153,7 +151,6 @@ function Heartbeat({ startedAt, lastMessageAt, iteration, maxIter = 5, phase = n
       {phase && PHASE_LABEL[phase] && (
         <span className={"hb-phase hb-phase-" + phase}>{PHASE_LABEL[phase]}</span>
       )}
-      {iteration > 0 && <span className="hb-iter">iter {iteration}/{maxIter}</span>}
     </span>
   );
 }
@@ -179,7 +176,6 @@ const KIND = {
 const STATUS = {
   queued:        { pill: "is-generating", dot: "s-generating", label: "Queued" },
   running:       { pill: "is-generating", dot: "s-generating", label: "Generating" },
-  validating:    { pill: "is-validating", dot: "s-validating", label: "Validating" },
   awaiting_user: { pill: "is-input",      dot: "s-input",      label: "Needs input" },
   done:          { pill: "is-ready",      dot: "s-ready",      label: "Ready" },
   errored:       { pill: "is-error",      dot: "s-error",      label: "Errored" },
@@ -192,7 +188,7 @@ const STATUS = {
 function podStatus(generations) {
   if (!generations?.length) return "idle";
   const active = generations.find((g) =>
-    g.status === "queued" || g.status === "running" || g.status === "validating" || g.status === "awaiting_user"
+    g.status === "queued" || g.status === "running" || g.status === "awaiting_user"
   );
   if (active) return active.status;
   const top = generations[0];
@@ -340,7 +336,6 @@ function Identicon({ seed, className, soft }) {
 function railStatus(ws) {
   // Active gen wins.
   if (ws.active_gen_status === "running" || ws.active_gen_status === "queued") return "running";
-  if (ws.active_gen_status === "validating") return "validating";
   if (ws.active_gen_status === "awaiting_user") return "awaiting_user";
   // Recent successful output (< 30 min) lights the chip green so a
   // fresh deck is visible at a glance after a run finishes.
@@ -360,7 +355,7 @@ function Rail({ workspaces, activeSlug, view, onHome, onOpen, onNew, onOpenDesig
           const status = railStatus(ws);
           const cls = "pod-chip" + (ws.slug === activeSlug && view === "workspace" ? " active" : "");
           const letters = (ws.name || ws.slug).split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase() || "?";
-          const animate = status === "running" || status === "queued" || status === "validating" || status === "awaiting_user";
+          const animate = status === "running" || status === "queued" || status === "awaiting_user";
           return (
             <button key={ws.id} className={cls} onClick={() => onOpen(ws.slug)}
               title={`${ws.name}${status !== "idle" ? " · " + (STATUS[status]?.label || status) : ""}`}>
@@ -469,7 +464,7 @@ function Dashboard({ workspaces, onOpen, onNew, onMenu }) {
     if (filter === "active") {
       // Treat active as having an in-flight generation.
       const status = podStatus(w.generations || w._gens);
-      return status === "running" || status === "queued" || status === "validating" || status === "awaiting_user";
+      return status === "running" || status === "queued" || status === "awaiting_user";
     }
     return true;
   });
@@ -515,7 +510,7 @@ function StatusPill({ status }) {
   if (!s) return null;
   return (
     <span className={"pill " + s.pill}>
-      <span className={"pdot " + s.dot + (status === "running" || status === "queued" || status === "validating" ? " pulse" : "")} />
+      <span className={"pdot " + s.dot + (status === "running" || status === "queued" ? " pulse" : "")} />
       {s.label}
     </span>
   );
@@ -581,7 +576,6 @@ function PodCard({ ws, onOpen, onMenu }) {
           <Heartbeat
             startedAt={ws.active_gen_started_at}
             lastMessageAt={ws.active_gen_last_message_at}
-            iteration={ws.active_gen_iter || 0}
             phase={ws.active_gen_phase}
             compact />
         )}
@@ -698,7 +692,7 @@ function WorkspaceView({ slug, wsTab, setWsTab, onBack, onChange }) {
   useEffect(() => {
     if (!activeGenRow) return;
     const s = activeGenRow.status;
-    if (s === "running" || s === "queued" || s === "validating" || s === "awaiting_user") {
+    if (s === "running" || s === "queued" || s === "awaiting_user") {
       const id = setInterval(refresh, 1500);
       return () => clearInterval(id);
     }
@@ -1032,7 +1026,7 @@ function FilesPanel({ ws, files, notes, generations, artifacts, activeArtifactId
   // kicked-off run has no artifact_path yet, so deriving busy-ness from
   // allArtifacts misses exactly the window where the UI should lock.
   const wsRunActive = generations.some((g) =>
-    ["queued", "running", "validating", "awaiting_user"].includes(g.status));
+    ["queued", "running", "awaiting_user"].includes(g.status));
 
   return (
     <div className="files-panel">
@@ -1057,12 +1051,11 @@ function FilesPanel({ ws, files, notes, generations, artifacts, activeArtifactId
         <StatusPill status={status} />
         {(() => {
           const active = generations.find((g) =>
-            g.status === "running" || g.status === "queued" || g.status === "validating" || g.status === "awaiting_user");
+            g.status === "running" || g.status === "queued" || g.status === "awaiting_user");
           if (!active) return null;
           return <Heartbeat
             startedAt={active.started_at}
             lastMessageAt={active.last_message_at}
-            iteration={active.validator_iteration}
             phase={active.phase} />;
         })()}
       </div>
@@ -1182,75 +1175,8 @@ function NoteRow({ note, onDelete }) {
   );
 }
 
-function PodReportModal({ gen, onClose }) {
-  const [data, setData] = useState(null);
-  useEffect(() => {
-    fetchJson(`/api/generations/${gen.id}`).then(setData).catch(() => setData({ validations: [] }));
-  }, [gen.id]);
-  const validations = data?.validations || [];
-  // Group validations by iteration → { 1: [...], 2: [...] }
-  const byIter = validations.reduce((acc, v) => {
-    (acc[v.iteration] ||= []).push(v); return acc;
-  }, {});
-  const iterations = Object.keys(byIter).map(Number).sort((a, b) => a - b);
-  return (
-    <div className="scrim" onClick={onClose}>
-      <div className="modal pod-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="pod-modal-head">
-          <div>
-            <h3>Pod report</h3>
-            <p style={{ margin: "4px 0 0", color: "var(--wp-fg-muted)", fontSize: 13 }}>
-              {gen.artifact_path?.split("/").pop()} · run #{gen.id} · v{gen.artifact_version || gen.id}
-            </p>
-          </div>
-          <button className="icon-btn" onClick={onClose}><Icon name="x" /></button>
-        </div>
-        {data == null && <div className="empty" style={{ padding: 32 }}>loading…</div>}
-        {data && iterations.length === 0 && (
-          <div className="empty" style={{ padding: 32 }}>
-            <Icon name="shield-off" style={{ width: 28, height: 28, opacity: 0.5, marginBottom: 8 }} />
-            <div>No pod data recorded for this run.</div>
-            <div style={{ fontSize: 12, color: "var(--wp-fg-faint)", marginTop: 6 }}>
-              (Validator was off, or this run pre-dates the pod feature.)
-            </div>
-          </div>
-        )}
-        <div className="pod-iters">
-          {iterations.map((it) => (
-            <div className="pod-iter" key={it}>
-              <div className="pod-iter-head">
-                <span className="eyebrow">Iteration {it}</span>
-                {byIter[it].find((v) => v.peer === "claude") && (
-                  <span className={"pill is-" + (byIter[it].find((v) => v.peer === "claude").verdict === "approve" ? "ready" : byIter[it].find((v) => v.peer === "claude").verdict === "abort" ? "error" : "generating")}>
-                    synthesis · {byIter[it].find((v) => v.peer === "claude").verdict}
-                  </span>
-                )}
-              </div>
-              <div className="pod-peers">
-                {byIter[it].map((v) => (
-                  <div className={"pod-peer pod-peer-" + v.peer} key={v.id}>
-                    <div className="pod-peer-head">
-                      <span className="pod-peer-name">{v.peer}</span>
-                      <span className={"pill " + (v.verdict === "approve" ? "is-ready" : v.verdict === "abort" ? "is-error" : v.verdict === "skipped" || v.verdict === "error" ? "" : "is-generating")}>
-                        {v.verdict}
-                      </span>
-                      {v.duration_ms ? <span className="fmeta">{Math.round(v.duration_ms / 1000)}s</span> : null}
-                    </div>
-                    <div className="pod-peer-body">{v.reasoning || "(no reasoning)"}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted }) {
   const [open, setOpen] = useState(false);
-  const [podGen, setPodGen] = useState(null);   // pod report modal target
   // Current slide inside the preview iframe (0-based) — the deck shell
   // broadcasts workpod-slide messages on every slide change so the
   // quick-comment affordance targets the slide being viewed.
@@ -1314,7 +1240,7 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted })
   }
   const wsSlug = ((cur.artifact_path || "").match(/\/workspaces\/([^/]+)\//) || [])[1] || null;
   return (
-    <div className={"artifact fade-up" + (cur.validator_verdict === "abort" ? " is-abort" : cur.validator_verdict === "iterate" ? " is-warn" : "")}>
+    <div className="artifact fade-up">
       {previewUrl && (
         <div className="artifact-preview">
           {/* cur.id in the src busts the iframe when a new generation
@@ -1338,16 +1264,6 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted })
         <div className="artifact-info" style={{ flex: 1, minWidth: 0 }}>
           <div className="artifact-name">
             <span className="artifact-fname">{name}</span>
-            {cur.validator_verdict === "abort" && (
-              <span className="vfail-badge" title="Validator marked this build as abort — artifact is still downloadable but the validator flagged unresolved issues">
-                <Icon name="shield-alert" /> Validation failed
-              </span>
-            )}
-            {cur.validator_verdict === "iterate" && (
-              <span className="vfail-badge is-warn" title="Validator hit the round cap with issues remaining">
-                <Icon name="shield-alert" /> Validation incomplete
-              </span>
-            )}
           </div>
           <div className="artifact-sub">HTML · run #{cur.id} · {fmtTime(cur.completed_at)}{isLatest ? "" : " · viewing older version"}</div>
         </div>
@@ -1368,31 +1284,21 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted })
             <div className="vhist">
               <div className="eyebrow" style={{ padding: "4px 8px 8px" }}>Version history</div>
               {artifacts.map((g) => {
-                const vv = g.validator_verdict;
-                const vdotClass = vv === "abort" ? "vd-abort" : vv === "iterate" ? "vd-iterate" : vv === "approve" ? "vd-approve" : "";
                 return (
-                  <div className={"vrow" + (g.id === cur.id ? " cur" : "") + (vv === "abort" ? " is-abort" : "")} key={g.id}
+                  <div className={"vrow" + (g.id === cur.id ? " cur" : "")} key={g.id}
                     onClick={() => {
                       setOpen(false);
                       setPinnedId(g.id === latestId ? null : g.id);
                       onOpen?.(g);
                     }}>
-                    <span className={"vdot " + vdotClass} />
+                    <span className="vdot" />
                     <div className="vmain">
                       <div className="vlabel">
                         v{g.artifact_version || g.id}
                         {g.id === latestId && <span className="eyebrow" style={{ color: "var(--wp-accent)" }}>latest</span>}
-                        {vv === "abort" && <span className="vfail-tag">validation failed</span>}
-                        {vv === "iterate" && <span className="vfail-tag is-warn">validation incomplete</span>}
                       </div>
                       <div className="vtime">{fmtTime(g.completed_at)}</div>
                       {g.prompt && <div className="vnote">{g.prompt}</div>}
-                      {vv && (
-                        <button className={"vpod" + (vv === "abort" ? " is-abort" : vv === "iterate" ? " is-warn" : "")}
-                          onClick={(e) => { e.stopPropagation(); setOpen(false); setPodGen(g); }}>
-                          <Icon name="shield-check" /> Pod · {vv}
-                        </button>
-                      )}
                     </div>
                   </div>
                 );
@@ -1407,12 +1313,6 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted })
           Generated by agent
         </span>
         <div className="artifact-actions">
-          {cur.validator_verdict && (
-            <button className={"btn btn-ghost" + (cur.validator_verdict === "abort" ? " btn-danger" : cur.validator_verdict === "iterate" ? " btn-warn" : cur.validator_verdict === "approve" ? " btn-success" : "")}
-                    onClick={() => setPodGen(cur)}>
-              <Icon name={cur.validator_verdict === "approve" ? "shield-check" : "shield-alert"} /> Pod · {cur.validator_verdict}
-            </button>
-          )}
           {isHtml && previewUrl && (
             <button className="btn btn-ghost"
                     onClick={() => {
@@ -1499,7 +1399,6 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted })
           </a>
         </div>
       </div>
-      {podGen && <PodReportModal gen={podGen} onClose={() => setPodGen(null)} />}
     </div>
   );
 }
@@ -1887,7 +1786,7 @@ function NoteModal({ slug, onClose, onSaved }) {
 
 function AgentDrawer({ ws, generation, open, onOpen, onClose, busy, files, notes, onGenerate, onReply, onSteer, hasPrior }) {
   const status = generation?.status || "idle";
-  const hasActive = generation && (status === "running" || status === "queued" || status === "validating" || status === "awaiting_user");
+  const hasActive = generation && (status === "running" || status === "queued" || status === "awaiting_user");
   const showHandlePulse = hasActive;
   const handleDot = STATUS[status]?.dot || "s-idle";
   return (
@@ -1925,7 +1824,7 @@ function AgentPanelBody({ ws, generation, busy, files, notes, onGenerate, onRepl
       } catch {}
     };
     tick();
-    if (generation.status === "running" || generation.status === "queued" || generation.status === "validating" || generation.status === "awaiting_user") {
+    if (generation.status === "running" || generation.status === "queued" || generation.status === "awaiting_user") {
       const id = setInterval(tick, 1500);
       return () => { cancelled = true; clearInterval(id); };
     }
@@ -1950,13 +1849,11 @@ function AgentPanelBody({ ws, generation, busy, files, notes, onGenerate, onRepl
   const status = generation?.status || "idle";
   const awaitingReply = status === "awaiting_user";
   const isRunning = status === "running" || status === "queued";
-  const isValidating = status === "validating";
   // Composer mode determines the submit handler and button label.
   // - awaiting_user → "Send" (answers an ASK)
   // - running       → "Steer" (mid-flight user note)
-  // - validating    → "Steer" disabled (validator pod is in flight; user can't steer)
   // - else          → "Generate" (kick off a new run)
-  const mode = awaitingReply ? "reply" : (isRunning || isValidating) ? "steer" : "generate";
+  const mode = awaitingReply ? "reply" : isRunning ? "steer" : "generate";
 
   const send = useCallback(async (text, opts = {}) => {
     const t = text.trim();
@@ -1977,13 +1874,9 @@ function AgentPanelBody({ ws, generation, busy, files, notes, onGenerate, onRepl
     "Add a prompt (optional) — or just hit Generate…";
 
   // Generate is the only mode where the empty composer can fire.
-  // Steer is disabled while the validator pod is running — the agent
-  // isn't reading user input during validation, so steers would queue
-  // up against nothing.
   const sendDisabled =
     (mode === "generate" && busy) ||
-    (mode !== "generate" && !composing.trim()) ||
-    isValidating;
+    (mode !== "generate" && !composing.trim());
 
   return (
     <>
@@ -2067,9 +1960,7 @@ function AgentPanelBody({ ws, generation, busy, files, notes, onGenerate, onRepl
                 disabled={sendDisabled}
                 onClick={() => send(composing)}>
                 {mode === "reply" && <><Icon name="send" /> Send</>}
-                {mode === "steer" && (isValidating
-                ? <><Icon name="shield-check" /> Validating…</>
-                : <><Icon name="steering-wheel" /> Steer</>)}
+                {mode === "steer" && <><Icon name="steering-wheel" /> Steer</>}
                 {mode === "generate" && (busy
                   ? <>Working…</>
                   : <><Icon name="sparkles" /> {hasPrior ? "Continue" : "Generate"}</>)}
@@ -2125,42 +2016,6 @@ function ChatMessage({ msg }) {
       <div className="ev-think fade-up">
         <Icon name="brain" />
         <span className="ev-body">{thinkMatch[1]}</span>
-      </div>
-    );
-  }
-  // Validator peer messages: [codex · iterate] / [schema · approve] / [qwen · approve] / [claude · …]
-  const peerMatch = c.match(/^\[(codex|qwen|schema|claude|validator)(?:\s*·\s*([^\]]+))?\]\s*(.*)$/s);
-  if (peerMatch) {
-    const [, peer, verdict, body] = peerMatch;
-    const isPending = verdict === "pending";
-    const isError   = verdict === "error";
-    const pillClass = isPending ? "is-pending"
-      : verdict === "approve" ? "is-ready"
-      : verdict === "abort" || isError ? "is-error"
-      : "is-generating";
-    const cardCls = "ev-peer fade-up ev-peer-" + peer
-      + (isPending ? " is-pending" : "")
-      + (isError ? " is-error" : "")
-      + (verdict === "abort" ? " is-abort" : "");
-    const headIcon = isError ? "alert-octagon"
-      : peer === "claude" ? "sparkles"
-      : peer === "validator" ? "shield-check"
-      : peer === "schema" ? "braces"
-      : "user-check";
-    return (
-      <div className={cardCls}>
-        <div className="ev-peer-head">
-          <Icon name={headIcon} />
-          <span className="ev-peer-name">{peer}</span>
-          {verdict && (
-            <span className={"pill " + pillClass}>
-              {isPending ? (
-                <><span className="pdot s-generating pulse" style={{ width: 6, height: 6, borderRadius: 999, display: "inline-block" }} /> reviewing<span className="ev-dots"></span></>
-              ) : verdict}
-            </span>
-          )}
-        </div>
-        <Markdown text={body} className="ev-peer-body" />
       </div>
     );
   }

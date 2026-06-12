@@ -10,6 +10,7 @@
 // workspace dir, no approval prompts in exec mode.
 // ============================================================
 import { join } from "node:path";
+import { homedir } from "node:os";
 import { writeFileSync, unlinkSync } from "node:fs";
 import type { AgentAdapter, AgentRunOpts, AgentResult } from "./types";
 import { resolveBin } from "./resolve-bin";
@@ -17,7 +18,7 @@ import { resolveBin } from "./resolve-bin";
 const CODEX_BIN = resolveBin("codex", process.env.OPENPOD_CODEX_BIN);
 
 function shortPath(p: string): string {
-  const home = process.env.HOME || "";
+  const home = homedir();
   return String(p || "").replace(home, "~");
 }
 
@@ -28,8 +29,8 @@ export const codexAdapter: AgentAdapter = {
     // Codex caches the account's selectable models (the /model picker
     // source) at $CODEX_HOME/models_cache.json.
     try {
-      const home = process.env.CODEX_HOME || `${process.env.HOME}/.codex`;
-      const d: any = await Bun.file(`${home}/models_cache.json`).json();
+      const home = process.env.CODEX_HOME || join(homedir(), ".codex");
+      const d: any = await Bun.file(join(home, "models_cache.json")).json();
       const slugs = (d.models || [])
         .filter((m: any) => m.visibility === "list")
         .map((m: any) => m.slug)
