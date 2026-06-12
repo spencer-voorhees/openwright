@@ -1150,16 +1150,23 @@ textarea.field { resize: none; line-height: 1.5; }
 .set-empty { font-size: 12.5px; color: var(--wp-fg-muted); }
 
 /* ─── workspace identicons ──────────────────────────────────── */
-.pod-chip { position: relative; overflow: hidden; }
+/* No overflow:hidden on the chip — it would clip the status dot.
+   The svg clips itself via border-radius instead. */
 .chip-identicon {
   position: absolute; inset: 0; width: 100%; height: 100%;
-  opacity: .5; image-rendering: pixelated;
+  border-radius: 10px;
+  image-rendering: pixelated;
+  transition: filter var(--um-dur-fast) var(--um-ease-soft);
 }
-.pod-chip.active .chip-identicon, .pod-chip:hover .chip-identicon { opacity: .72; }
+.pod-chip:hover .chip-identicon { filter: brightness(1.18); }
+.pod-chip.active .chip-identicon { filter: brightness(1.28) saturate(1.15); }
 .chip-letters {
   position: relative; z-index: 1;
-  text-shadow: 0 1px 3px rgba(0,0,0,.85), 0 0 6px rgba(0,0,0,.5);
+  color: #fff; font-weight: 700; font-size: 13px;
+  letter-spacing: .02em; line-height: 1;
+  text-shadow: 0 1px 2px rgba(0,0,0,.55);
 }
+.pod-chip.active .chip-letters, .pod-chip:hover .chip-letters { color: #fff; }
 .pod-chip .dot { z-index: 2; }
 .card-identicon {
   width: 30px; height: 30px; flex: 0 0 30px;

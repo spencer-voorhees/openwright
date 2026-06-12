@@ -309,7 +309,7 @@ function icHash(str) {
   for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
   return h >>> 0;
 }
-function Identicon({ seed, className }) {
+function Identicon({ seed, className, soft }) {
   const h = icHash(String(seed));
   const hue = h % 360;
   const cells = [];
@@ -323,11 +323,15 @@ function Identicon({ seed, className }) {
       }
     }
   }
+  // soft = letters render on top, so the pattern is a quiet tonal
+  // texture; otherwise it's the standalone vivid mark.
+  const bg = soft ? `hsl(${hue} 36% 21%)` : `hsl(${hue} 32% 17%)`;
+  const cell = soft ? `hsl(${hue} 42% 31%)` : `hsl(${hue} 52% 56%)`;
   return (
     <svg className={className} viewBox="0 0 5 5" aria-hidden="true">
-      <rect width="5" height="5" fill={`hsl(${hue} 32% 17%)`} />
+      <rect width="5" height="5" fill={bg} />
       {cells.map(([r, c]) => (
-        <rect key={`${r}-${c}`} x={c} y={r} width="1" height="1" fill={`hsl(${hue} 52% 56%)`} />
+        <rect key={`${r}-${c}`} x={c} y={r} width="1" height="1" fill={cell} />
       ))}
     </svg>
   );
@@ -360,7 +364,7 @@ function Rail({ workspaces, activeSlug, view, onHome, onOpen, onNew, onOpenDesig
           return (
             <button key={ws.id} className={cls} onClick={() => onOpen(ws.slug)}
               title={`${ws.name}${status !== "idle" ? " · " + (STATUS[status]?.label || status) : ""}`}>
-              <Identicon seed={ws.slug} className="chip-identicon" />
+              <Identicon seed={ws.slug} className="chip-identicon" soft />
               <span className="chip-letters">{letters}</span>
               {status !== "idle" && (
                 <span className={"dot " + (STATUS[status]?.dot || "s-idle") + (animate ? " pulse" : "")} />
