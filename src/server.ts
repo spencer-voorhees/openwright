@@ -133,7 +133,14 @@ async function listWorkspaces() {
               WHERE workspace_id = w.id
                 AND status IN ('queued','running','awaiting_user')
               ORDER BY id DESC LIMIT 1)) AS active_gen_last_message_at
-    FROM workspaces w ORDER BY created_at DESC
+    FROM workspaces w
+    -- most recently touched first: latest run activity, file upload,
+    -- or creation — running workspaces bubble to the top naturally
+    ORDER BY COALESCE(
+      (SELECT MAX(COALESCE(completed_at, started_at)) FROM generations WHERE workspace_id = w.id),
+      (SELECT MAX(uploaded_at) FROM files WHERE workspace_id = w.id),
+      w.created_at
+    ) DESC
   `).all();
   return json({ workspaces: rows });
 }

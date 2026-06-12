@@ -591,16 +591,10 @@ function AgentCard({ agent: a, active, onPick }) {
 
 function Dashboard({ workspaces, onOpen, onNew, onMenu }) {
   const [q, setQ] = useState("");
-  const [filter, setFilter] = useState("all");
-  const list = workspaces.filter((w) => {
-    if (q && !w.name.toLowerCase().includes(q.toLowerCase())) return false;
-    if (filter === "active") {
-      // Treat active as having an in-flight generation.
-      const status = podStatus(w.generations || w._gens);
-      return status === "running" || status === "queued" || status === "awaiting_user";
-    }
-    return true;
-  });
+  // Server orders by recent activity, so live workspaces lead the
+  // grid — an explicit Active filter was empty noise at this scale.
+  const list = workspaces.filter((w) =>
+    !q || w.name.toLowerCase().includes(q.toLowerCase()));
   return (
     <div className="dash">
       <div className="dash-inner">
@@ -616,10 +610,6 @@ function Dashboard({ workspaces, onOpen, onNew, onMenu }) {
           <div className="search">
             <Icon name="search" />
             <input placeholder="Search workspaces…" value={q} onChange={(e) => setQ(e.target.value)} />
-          </div>
-          <div className="seg">
-            <button className={filter === "all" ? "on" : ""} onClick={() => setFilter("all")}>All</button>
-            <button className={filter === "active" ? "on" : ""} onClick={() => setFilter("active")}>Active</button>
           </div>
         </div>
         <div className="pod-grid">
