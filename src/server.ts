@@ -550,8 +550,8 @@ async function replyToAgent(gen_id: string, req: Request) {
   if (!content || !content.trim()) return err("content required");
   const g = db.query("SELECT * FROM generations WHERE id = ?").get(gen_id) as any;
   if (!g) return err("generation not found", 404);
-  db.run(`INSERT INTO messages(generation_id, role, content, ts) VALUES(?, 'user', ?, ?)`,
-         [g.id, content.trim(), Date.now()]);
+  // The run loop writes the user's reply to the transcript when it
+  // consumes it — inserting here too duplicated every answer.
   // If the generation was paused waiting for input, resume.
   if (g.status === "awaiting_user") {
     postUserReply(g.id, content.trim()).catch((e) => {

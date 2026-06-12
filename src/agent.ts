@@ -271,8 +271,13 @@ async function runAgentLoop(gen_id: number, workspace_id: number, sys: string, t
 
     const notes = steerNotes.get(gen_id);
     if (notes?.length) {
-      nextPrompt += "\n\nUser steering notes (added mid-run — treat as requirements):\n" +
-        notes.map((n) => `- ${n}`).join("\n");
+      // A user often answers the agent's question by repeating their
+      // queued steer — don't feed the agent the same text twice.
+      const fresh = notes.filter((n) => !nextPrompt!.includes(n));
+      if (fresh.length) {
+        nextPrompt += "\n\nUser steering notes (added mid-run — treat as requirements):\n" +
+          fresh.map((n) => `- ${n}`).join("\n");
+      }
       steerNotes.delete(gen_id);
     }
 

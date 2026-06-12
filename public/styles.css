@@ -1316,3 +1316,17 @@ select option { background-color: #161618; color: #f5f5f7; }
 .export-menu { width: 240px; padding: 6px; display: flex; flex-direction: column; gap: 2px; }
 .export-menu .btn { width: 100%; justify-content: flex-start; border: none; }
 .files-panel .files-body > .sec-label.expanded { max-width: none; }
+
+/* Rail status dot: the generic .pulse fades opacity, which let the
+   avatar show through at the dip. Here the core stays solid and an
+   expanding ghost ring carries the motion (iOS ping pattern). */
+.pod-chip .dot.pulse { animation: none; }
+.pod-chip .dot.pulse::after {
+  content: ""; position: absolute; inset: 0; border-radius: 999px;
+  background: inherit;
+  animation: ow-ping 1.5s var(--um-ease-soft) infinite;
+}
+@keyframes ow-ping {
+  0%   { transform: scale(1);   opacity: .65; }
+  75%, 100% { transform: scale(2.4); opacity: 0; }
+}
