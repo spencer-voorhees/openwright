@@ -77,6 +77,7 @@
   --wp-accent-deep:   var(--um-ultra-deep);
   --wp-accent-soft:   var(--um-ultra-soft);
   --wp-accent-tint:   rgba(255, 90, 31, 0.14);
+  --wp-accent-fg:     #ffffff;
   --wp-accent-line:   rgba(255, 90, 31, 0.32);
 
   --wp-link:          var(--um-blue-soft);
@@ -1038,8 +1039,11 @@ textarea.field { resize: none; line-height: 1.5; }
 .qc-fab {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 7px 12px; border-radius: 999px;
-  background: var(--wp-accent, #0a84ff); color: #fff;
+  background: var(--wp-accent, #0a84ff); color: var(--wp-accent-fg);
   border: none; font-size: 12px; font-weight: 600; cursor: pointer;
+  /* The pill floats over the (usually light) deck — the shadow +
+     inner hairline keep it legible even when the accent is white. */
+  box-shadow: 0 2px 8px rgba(0,0,0,.3), inset 0 0 0 1px rgba(0,0,0,.14);
   opacity: 0.6; transition: opacity 120ms ease;
 }
 .artifact-preview:hover .qc-fab, .qc-fab:focus, .preview-quick-comment:hover .qc-fab { opacity: 1; }
@@ -1120,7 +1124,7 @@ textarea.field { resize: none; line-height: 1.5; }
   font-family: var(--um-font-mono); font-size: 10px; font-weight: 700;
   min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px;
   display: inline-flex; align-items: center; justify-content: center;
-  background: var(--wp-accent); color: #fff;
+  background: var(--wp-accent); color: var(--wp-accent-fg);
 }
 .comments-hub-badge.is-addressed { background: var(--um-positive); }
 

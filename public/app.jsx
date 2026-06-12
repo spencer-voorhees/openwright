@@ -344,6 +344,10 @@ function applyAccent(hex) {
   rs.setProperty("--um-ultra-soft", `rgb(${Math.min(255, r + 48)} ${Math.min(255, g + 48)} ${Math.min(255, b + 48)})`);
   rs.setProperty("--wp-accent-tint", `rgba(${r}, ${g}, ${b}, 0.14)`);
   rs.setProperty("--wp-accent-line", `rgba(${r}, ${g}, ${b}, 0.32)`);
+  // Text that sits ON the accent: light accents (white, yellow, cyan)
+  // need dark glyphs, the rest take white.
+  const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  rs.setProperty("--wp-accent-fg", lum > 165 ? "#16161a" : "#ffffff");
   document.querySelectorAll('link[rel="icon"]').forEach((l) => { l.href = `/logo.svg?c=${hex.slice(1)}`; });
   window.dispatchEvent(new CustomEvent("op-accent", { detail: hex }));
 }
