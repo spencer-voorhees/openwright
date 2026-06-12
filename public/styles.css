@@ -1219,11 +1219,15 @@ textarea.field { resize: none; line-height: 1.5; }
 .set-accents { display: flex; gap: 12px; flex-wrap: wrap; }
 .set-accent {
   width: 38px; height: 38px; border-radius: 12px; cursor: pointer;
-  border: 2px solid transparent; display: grid; place-items: center;
-  transition: transform .12s ease, border-color .12s ease;
+  border: none; display: grid; place-items: center;
+  transition: transform .12s ease, box-shadow .12s ease;
 }
 .set-accent:hover { transform: scale(1.08); }
-.set-accent.active { border-color: #fff; }
+/* Active = white ring floated off the tile by a bg-colored gap. The
+   old transparent border let the fill bleed outside the ring on
+   light swatches. */
+.set-accent.active { box-shadow: 0 0 0 2px var(--wp-bg), 0 0 0 4px #fff; }
 .set-accent svg { width: 16px; height: 16px; color: #fff; filter: drop-shadow(0 1px 2px rgba(0,0,0,.6)); }
-.set-accent.is-light { box-shadow: inset 0 0 0 1px rgba(0,0,0,.25); }
+.set-accent.is-light { box-shadow: inset 0 0 0 1px rgba(0,0,0,.28); }
+.set-accent.is-light.active { box-shadow: inset 0 0 0 1px rgba(0,0,0,.28), 0 0 0 2px var(--wp-bg), 0 0 0 4px rgba(255,255,255,.92); }
 .set-accent.is-light svg { color: #16161a; filter: none; }
