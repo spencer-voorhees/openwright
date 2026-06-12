@@ -129,6 +129,8 @@ addColumnIfMissing("workspaces",  "persona",             "TEXT NOT NULL DEFAULT 
 // the workspace card can show what the agent is actively doing during
 // a run rather than just 'running'. NULL outside an active phase.
 addColumnIfMissing("generations", "phase",               "TEXT");
+addColumnIfMissing("generations", "engine",              "TEXT");
+addColumnIfMissing("generations", "model",               "TEXT");
 // Foreign-key into the artifacts table. NULL on legacy rows; the
 // post-add backfill below assigns each to a default per-workspace
 // artifact so every gen has a parent artifact going forward.

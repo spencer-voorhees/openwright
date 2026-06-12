@@ -930,7 +930,7 @@ function WorkspaceView({ slug, wsTab, setWsTab, onBack, onChange }) {
 // FILES PANEL
 // ═══════════════════════════════════════════════════════════════
 
-function WorkspaceSettingsButton({ ws, onChange }) {
+function WorkspaceSettingsButton({ ws, onChange, runActive }) {
   const [open, setOpen] = useState(false);
   useEffect(() => {
     if (!open) return;
@@ -954,6 +954,12 @@ function WorkspaceSettingsButton({ ws, onChange }) {
             </div>
             <div className="ws-settings-control">
               <InlineAgentSelect ws={ws} onChange={onChange} />
+              {runActive && (
+                <span style={{ fontSize: 10.5, color: "var(--wp-warn)", display: "block", marginTop: 4 }}>
+                  A run is active: switching takes effect on the agent's next turn
+                  (its next reply or restart), not mid-thought.
+                </span>
+              )}
             </div>
           </div>
           <div className="ws-settings-row">
@@ -1183,7 +1189,7 @@ function FilesPanel({ ws, files, notes, generations, artifacts, activeArtifactId
                                 activeArtifactId={activeArtifactId}
                                 onSelect={onSelectArtifact}
                                 onChange={onChange} />
-              <WorkspaceSettingsButton ws={ws} onChange={onChange} />
+              <WorkspaceSettingsButton ws={ws} onChange={onChange} runActive={wsRunActive} />
             </span>
           </div>
         </div>
@@ -2023,13 +2029,20 @@ function AgentPanelBody({ ws, generation, busy, files, notes, onGenerate, onRepl
         <div className="agent-avatar"><Icon name="bot" /></div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="agent-title">
-            Agent · {({ claude: "Claude", copilot: "Copilot", codex: "Codex" })[ws?.agent_engine] || ws?.agent_engine || "Claude"}
+            Agent · {(() => {
+              const LB = { claude: "Claude", copilot: "Copilot", codex: "Codex" };
+              const eng = (hasActive && generation?.engine) || ws?.agent_engine || "claude";
+              return LB[eng] || eng;
+            })()}
           </div>
           <div className="agent-status" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
             {hasActive
               ? <><span className={"pdot " + (STATUS[status]?.dot || "s-idle") + " pulse"} style={{ width: 7, height: 7, borderRadius: 999, display: "inline-block" }} />{STATUS[status]?.label || status}</>
               : <span style={{ opacity: 0.7 }}>idle</span>}
-            {ws?.agent_model ? <span style={{ opacity: 0.7 }}> · {ws.agent_model}</span> : null}
+            {(() => {
+              const m = (hasActive && generation?.model) || ws?.agent_model;
+              return m ? <span style={{ opacity: 0.7 }}> · {m}</span> : null;
+            })()}
           </div>
         </div>
         {hasActive && (

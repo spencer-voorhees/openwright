@@ -305,7 +305,7 @@ async function getWorkspace(slug: string) {
   ).all(w.id);
   const generations = db.query(
     `SELECT g.id, g.prompt, g.status, g.started_at, g.completed_at, g.error,
-            g.artifact_path, g.artifact_version, g.artifact_id, g.phase,
+            g.artifact_path, g.artifact_version, g.artifact_id, g.phase, g.engine, g.model,
             (SELECT MAX(ts) FROM messages WHERE generation_id = g.id) AS last_message_at
      FROM generations g WHERE g.workspace_id = ? ORDER BY g.id DESC`).all(w.id);
   for (const g of generations as any[]) {

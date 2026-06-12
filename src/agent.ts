@@ -117,6 +117,7 @@ function buildContinuationContext(artifact_id: number, current_gen_id: number, w
   const lines: string[] = [];
   lines.push(`Prior generation: run #${prior.id}, v${prior.artifact_version || prior.id}`);
   if (prior.prompt) lines.push(`Prior user prompt: ${prior.prompt}`);
+  if (prior.engine) lines.push(`Prior run engine: ${prior.engine}${prior.model ? ` (${prior.model})` : ""} — possibly a different agent than you; trust the files on disk over assumptions about prior behavior.`);
   if (prior.artifact_path) lines.push(`Prior artifact: ${prior.artifact_path}`);
   if (lastAgentMsg?.content) lines.push(`Prior agent summary: ${String(lastAgentMsg.content).slice(0, 600)}`);
   const notice = dsSwitchNotice(ws, prior.artifact_path || null);
@@ -252,9 +253,13 @@ function extractAsk(text: string): string | null {
   return null;
 }
 
-async function runAgentLoop(gen_id: number, engineId: string, model: string, sys: string, trigger: string,
+async function runAgentLoop(gen_id: number, workspace_id: number, sys: string, trigger: string,
                             wsDir: string, specDir: string): Promise<{ path: string; version: number } | null> {
-  const adapter = getAdapter(engineId);
+  // Engine + model are re-resolved from the workspace EVERY iteration:
+  // each iteration is a fresh adapter session anyway (continuity lives
+  // on disk), so a user who swaps engines mid-run — even while a
+  // question is pending — gets the new engine on the next turn.
+  let adapter = getAdapter((db.query("SELECT agent_engine FROM workspaces WHERE id = ?").get(workspace_id) as any)?.agent_engine);
   let nextPrompt: string | null = trigger;
   let attempts = 0;
   let idleRetries = 0;
@@ -270,6 +275,15 @@ async function runAgentLoop(gen_id: number, engineId: string, model: string, sys
         notes.map((n) => `- ${n}`).join("\n");
       steerNotes.delete(gen_id);
     }
+
+    const wsNow = db.query("SELECT agent_engine, agent_model FROM workspaces WHERE id = ?").get(workspace_id) as any;
+    const nowAdapter = getAdapter(wsNow?.agent_engine);
+    if (nowAdapter.id !== adapter.id) {
+      appendMessage(gen_id, "agent", `[engine switched] continuing with ${nowAdapter.label}`);
+    }
+    adapter = nowAdapter;
+    const model = wsNow?.agent_model || "";
+    db.run("UPDATE generations SET engine = ?, model = ? WHERE id = ?", [adapter.id, model || null, gen_id]);
 
     const abortCtl = new AbortController();
     activeAborts.set(gen_id, abortCtl);
@@ -427,7 +441,7 @@ ${versionPin}${commentsBlock}
 If anything material is ambiguous (audience, scope, intended length, missing data), ASK ME using a single message that begins with "ASK:" and stop. Otherwise, build the deck.`;
 
   try {
-    const built = await runAgentLoop(gen_id, engineId, ws.agent_model || "", sys, trigger, wsDir, specDir);
+    const built = await runAgentLoop(gen_id, ws.id, sys, trigger, wsDir, specDir);
     const cur = db.query("SELECT * FROM generations WHERE id = ?").get(gen_id) as any;
     if (cur.status === "errored" || cur.status === "awaiting_user") return;
     if (!built) {
