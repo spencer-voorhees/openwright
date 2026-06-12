@@ -545,7 +545,7 @@ function SettingsView() {
 
         <div className="set-section">
           <h2 className="set-section-title">Default model</h2>
-          <p className="set-section-sub">Models the selected engine reports as available right now. A frontier model (Opus 4.8 or equivalent) is recommended; smaller models produce noticeably weaker decks.</p>
+          <p className="set-section-sub">Models the selected engine reports as available right now.</p>
           <select className="field set-model" value={settings?.default_agent_model || ""}
                   onChange={(e) => save({ default_agent_model: e.target.value })}>
             <option value="">{engInfo ? `Engine default · ${engInfo.label}` : "Engine default"}</option>
