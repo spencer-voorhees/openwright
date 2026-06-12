@@ -29,9 +29,7 @@ const ACCENT_PRESETS = ["#ff5a1f", "#0A84FF", "#BF5AF2", "#30D158", "#FF375F", "
 // adapter and refresh in parallel so /api/agents answers fast.
 type AgentProbe = { id: string; label: string; models: string[]; ok: boolean; detail: string };
 const probeCache = new Map<string, { at: number; probe: AgentProbe }>();
-async function probeAgent(a: (typeof ADAPTERS)[number]): Promise<AgentProbe> {
-  const hit = probeCache.get(a.id);
-  if (hit && Date.now() - hit.at < 60_000) return hit.probe;
+async function refreshProbe(a: (typeof ADAPTERS)[number]): Promise<AgentProbe> {
   const [avail, models] = await Promise.all([
     a.available().catch(() => ({ ok: false, detail: "probe failed" })),
     a.listModels().catch(() => [] as string[]),
@@ -39,6 +37,14 @@ async function probeAgent(a: (typeof ADAPTERS)[number]): Promise<AgentProbe> {
   const probe = { id: a.id, label: a.label, models, ...avail };
   probeCache.set(a.id, { at: Date.now(), probe });
   return probe;
+}
+async function probeAgent(a: (typeof ADAPTERS)[number]): Promise<AgentProbe> {
+  const hit = probeCache.get(a.id);
+  if (!hit) return refreshProbe(a);
+  // Stale-while-revalidate: never make the UI wait on CLI spawns —
+  // serve the last known answer and refresh in the background.
+  if (Date.now() - hit.at > 60_000) refreshProbe(a);
+  return hit.probe;
 }
 // Warm the cache at boot so the first settings open is instant.
 setTimeout(() => { for (const a of ADAPTERS) probeAgent(a); }, 250);
