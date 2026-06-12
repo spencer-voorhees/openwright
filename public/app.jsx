@@ -2123,8 +2123,8 @@ function AgentPanelBody({ ws, generation, busy, files, notes, onGenerate, onRepl
 
   const placeholder =
     mode === "reply" ? "answer the agent…" :
-    mode === "steer" ? "steer the agent mid-flight — it'll pick this up on its next turn…" :
-    "Add a prompt (optional) — or just hit Generate…";
+    mode === "steer" ? "Steer the agent (applies next turn)…" :
+    "Add a prompt (optional) or just hit Generate…";
 
   // Generate is the only mode where the empty composer can fire.
   const sendDisabled =

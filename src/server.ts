@@ -571,8 +571,8 @@ async function steerAgent(gen_id: string, req: Request) {
   if (g.status !== "running" && g.status !== "queued") {
     return err(`cannot steer a generation in status '${g.status}'`);
   }
-  db.run(`INSERT INTO messages(generation_id, role, content, ts) VALUES(?, 'user', ?, ?)`,
-         [g.id, content.trim(), Date.now()]);
+  // postSteer owns the transcript write — inserting here too showed
+  // the user's steer twice.
   postSteer(g.id, content.trim()).catch((e) => console.error("[steer]", gen_id, e));
   return json({ ok: true });
 }

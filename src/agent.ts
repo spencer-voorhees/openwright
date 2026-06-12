@@ -61,7 +61,7 @@ export function postSteer(gen_id: number, content: string) {
   steerNotes.set(gen_id, list);
   appendMessage(gen_id, "user", content);
   appendMessage(gen_id, "agent",
-    "[noted] Steering lands at the next agent checkpoint (ASK reply or restart) — engines without live injection can't take mid-turn input.");
+    "[noted] Steering lands at the agent's next checkpoint; engines without live injection can't take mid-turn input.");
   return Promise.resolve();
 }
 
