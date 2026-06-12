@@ -117,10 +117,11 @@ if ($haveCopilot) { Ok "detected: copilot ($copilotBin)" }
 if ($haveCodex)   { Ok "detected: codex ($codexBin)" }
 if (-not ($haveClaude -or $haveCopilot -or $haveCodex)) { Note "no compatible agent CLI found on this machine" }
 
+$copilotFresh = $false
 function InstallEngine($which) {
   switch ($which) {
     "claude"  { bun add -g "@anthropic-ai/claude-code" | Out-Null; $script:haveClaude  = $true; Ok "claude installed - run 'claude' once to log in" }
-    "copilot" { bun add -g "@github/copilot" | Out-Null;           $script:haveCopilot = $true; Ok "copilot installed" }
+    "copilot" { bun add -g "@github/copilot" | Out-Null;           $script:haveCopilot = $true; $script:copilotFresh = $true; Ok "copilot installed" }
     "codex"   { bun add -g "@openai/codex" | Out-Null;             $script:haveCodex   = $true; Ok "codex installed" }
   }
 }
@@ -158,16 +159,14 @@ if (-not (Select-String -Path ".env" -Pattern "^OPENWRIGHT_AGENT=" -Quiet -Error
 }
 
 # Auth walkthroughs.
-$copilotMarker = Join-Path $env:USERPROFILE ".copilot\.openwright-logged-in"
-if ($haveCopilot -and -not (Test-Path $copilotMarker) -and -not ($env:COPILOT_GITHUB_TOKEN -or $env:GH_TOKEN -or $env:GITHUB_TOKEN)) {
+# Offer the login walkthrough only right after installing copilot -
+# there is no auth-status command to query, and a one-time offer
+# beats nagging on every setup re-run.
+if ($copilotFresh -and -not ($env:COPILOT_GITHUB_TOKEN -or $env:GH_TOKEN -or $env:GITHUB_TOKEN)) {
   if ((-not $Yes) -and (Ask "Log in to Copilot now (device-code flow)?" $false)) {
     & $(if ($copilotBin) { $copilotBin } else { "copilot" }) login
-    if ($LASTEXITCODE -eq 0) {
-      New-Item -ItemType Directory -Force (Split-Path $copilotMarker) | Out-Null
-      New-Item -ItemType File -Force $copilotMarker | Out-Null
-    }
   }
-  else { Note "copilot auth later: run 'copilot login' (or set COPILOT_GITHUB_TOKEN)" }
+  else { Note "copilot auth: run 'copilot login' when ready (or set COPILOT_GITHUB_TOKEN)" }
 }
 if ($haveCodex) {
   & $(if ($codexBin) { $codexBin } else { "codex" }) login status *> $null

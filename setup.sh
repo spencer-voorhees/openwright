@@ -122,10 +122,11 @@ HAVE_CLAUDE=0; HAVE_COPILOT=0; HAVE_CODEX=0
 [ "$HAVE_CODEX" = "1" ]   && ok "detected: codex ($CODEX_BIN)"
 [ "$HAVE_CLAUDE$HAVE_COPILOT$HAVE_CODEX" = "000" ] && note "no compatible agent CLI found on this machine"
 
+COPILOT_FRESH=0
 install_engine() {
   case "$1" in
     claude)  bun add -g @anthropic-ai/claude-code >/dev/null && HAVE_CLAUDE=1  && ok "claude installed — run 'claude' once to log in" ;;
-    copilot) bun add -g @github/copilot >/dev/null           && HAVE_COPILOT=1 && ok "copilot installed" ;;
+    copilot) bun add -g @github/copilot >/dev/null           && HAVE_COPILOT=1 && COPILOT_FRESH=1 && ok "copilot installed" ;;
     codex)   bun add -g @openai/codex >/dev/null             && HAVE_CODEX=1   && ok "codex installed" ;;
   esac
 }
@@ -166,16 +167,14 @@ if ! grep -q '^OPENWRIGHT_AGENT=' .env 2>/dev/null; then
 fi
 
 # Auth walkthroughs for engines that are installed but not logged in.
-COPILOT_MARKER="$HOME/.copilot/.openwright-logged-in"
-if [ "$HAVE_COPILOT" = "1" ] && [ ! -f "$COPILOT_MARKER" ] && [ -z "${COPILOT_GITHUB_TOKEN:-}${GH_TOKEN:-}${GITHUB_TOKEN:-}" ]; then
+# Offer the login walkthrough only right after installing copilot —
+# there is no auth-status command to query, and a one-time offer
+# beats nagging on every setup re-run.
+if [ "$COPILOT_FRESH" = "1" ] && [ -z "${COPILOT_GITHUB_TOKEN:-}${GH_TOKEN:-}${GITHUB_TOKEN:-}" ]; then
   if [ "$YES" = "0" ] && ask "Log in to Copilot now (opens a device-code flow)?" n; then
-    if "${COPILOT_BIN:-copilot}" login; then
-      mkdir -p "$HOME/.copilot"; touch "$COPILOT_MARKER"
-    else
-      note "login did not complete — run 'copilot login' later"
-    fi
+    "${COPILOT_BIN:-copilot}" login || note "login did not complete — run 'copilot login' later"
   else
-    note "copilot auth later: run 'copilot login' (or set COPILOT_GITHUB_TOKEN)"
+    note "copilot auth: run 'copilot login' when ready (or set COPILOT_GITHUB_TOKEN)"
   fi
 fi
 if [ "$HAVE_CODEX" = "1" ] && ! "${CODEX_BIN:-codex}" login status >/dev/null 2>&1; then
