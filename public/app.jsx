@@ -27,6 +27,10 @@ const CUSTOM_ICONS = {
     </svg>`,
 };
 
+function Spinner({ style }) {
+  return <Icon name="loader-circle" className="spin" style={style} />;
+}
+
 function Icon({ name, className, style }) {
   const ref = React.useRef(null);
   React.useEffect(() => {
@@ -257,6 +261,7 @@ function App() {
 
   return (
     <div className="wp-app">
+      <ToastHost />
       <Rail workspaces={workspaces} activeSlug={activeSlug}
             view={view} onHome={backToDashboard}
             onOpenDesignSystems={() => { setView("design-systems"); setActiveSystemId(null); }}
@@ -312,6 +317,34 @@ function App() {
 // Windows that means backslashes, which every regex/split here would
 // otherwise miss.
 function normPath(p) { return String(p || "").replace(/\\/g, "/"); }
+
+// ─── toasts ────────────────────────────────────────────────────
+function showToast(text, kind = "ok") {
+  window.dispatchEvent(new CustomEvent("op-toast", { detail: { text, kind, id: ++showToast._id } }));
+}
+showToast._id = 0;
+function ToastHost() {
+  const [toasts, setToasts] = useState([]);
+  useEffect(() => {
+    const h = (e) => {
+      const t = e.detail;
+      setToasts((list) => [...list, t]);
+      setTimeout(() => setToasts((list) => list.filter((x) => x.id !== t.id)), 3800);
+    };
+    window.addEventListener("op-toast", h);
+    return () => window.removeEventListener("op-toast", h);
+  }, []);
+  return (
+    <div className="toast-host">
+      {toasts.map((t) => (
+        <div key={t.id} className={"toast fade-up " + (t.kind === "bad" ? "is-bad" : "is-ok")}>
+          <Icon name={t.kind === "bad" ? "shield-alert" : "check-circle-2"} />
+          {t.text}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 // ─── accent theming ────────────────────────────────────────────
 // One source accent drives the CSS variable family, the favicon, and
@@ -578,11 +611,16 @@ function AgentCard({ agent: a, active, onPick }) {
                 onClick={async (e) => {
                   e.stopPropagation();
                   setVerifying(true);
-                  try { setVerdict(await postJson("/api/agents/copilot/verify", {})); }
+                  try {
+                    const r = await postJson("/api/agents/copilot/verify", {});
+                    setVerdict(r);
+                    showToast(r.detail || (r.ok ? "Copilot signed in" : "Copilot not signed in"), r.ok ? "ok" : "bad");
+                  }
                   catch (err) { setVerdict({ ok: false, detail: "check failed: " + err.message }); }
                   finally { setVerifying(false); }
                 }}>
-          {verifying ? "Checking… (sends one tiny request)" : "Verify auth"}
+          {verifying && <Spinner style={{ width: 12, height: 12 }} />}
+          {verifying ? " Checking… (sends one tiny request)" : "Verify auth"}
         </button>
       )}
     </div>
@@ -1346,6 +1384,13 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted })
     localStorage.setItem("ow-preview-hidden", h ? "0" : "1");
     return !h;
   });
+  // Expanded = the card escapes the 1560 measure and uses the full
+  // window width; for working a big monitor without going fullscreen.
+  const [expanded, setExpanded] = useState(() => localStorage.getItem("ow-preview-expanded") === "1");
+  const toggleExpanded = () => setExpanded((x) => {
+    localStorage.setItem("ow-preview-expanded", x ? "0" : "1");
+    return !x;
+  });
   useEffect(() => {
     const onMsg = (e) => {
       if (e?.data?.type !== "workpod-slide") return;
@@ -1399,9 +1444,10 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted })
   }
   const wsSlug = (normPath(cur.artifact_path).match(/\/workspaces\/([^/]+)\//) || [])[1] || null;
   return (
-    <div className="artifact fade-up">
+    <div className={"artifact fade-up" + (expanded ? " expanded" : "")}>
       {previewUrl && !previewHidden && (
         <div className="artifact-preview">
+          {!previewLoaded && <div className="preview-loading"><Spinner style={{ width: 22, height: 22 }} /></div>}
           {/* cur.id in the src busts the iframe when a new generation
               lands on the SAME file (agents often edit deck-vN.html in
               place for comment rounds) — path alone never changes then,
@@ -1426,6 +1472,13 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted })
           </div>
           <div className="artifact-sub">HTML · run #{cur.id} · {fmtTime(cur.completed_at)}{isLatest ? "" : " · viewing older version"}</div>
         </div>
+        {previewUrl && (
+          <button className="icon-btn preview-toggle expand-toggle"
+                  title={expanded ? "Fit the card to the standard width" : "Expand the card to the full window"}
+                  onClick={toggleExpanded}>
+            <Icon name={expanded ? "minimize-2" : "maximize-2"} />
+          </button>
+        )}
         {previewUrl && (
           <button className="icon-btn preview-toggle"
                   title={previewHidden ? "Show the deck preview" : "Hide the deck preview"}
@@ -1984,9 +2037,10 @@ function CopilotAuthChip() {
                 const r = await postJson("/api/agents/copilot/verify", {});
                 setDetail(r.detail || "");
                 setState(r.ok ? "ok" : "bad");
+                showToast(r.detail || (r.ok ? "Copilot signed in" : "Copilot not signed in"), r.ok ? "ok" : "bad");
               } catch (e) { setDetail(e.message); setState("bad"); }
             }}>
-      <Icon name="shield-question" />
+      {state === "checking" ? <Spinner /> : <Icon name="shield-question" />}
       {state === "checking" ? "Checking auth…" : "Verify Copilot auth"}
     </button>
   );
@@ -2156,7 +2210,7 @@ function AgentPanelBody({ ws, generation, busy, files, notes, onGenerate, onRepl
                 {mode === "reply" && <><Icon name="send" /> Send</>}
                 {mode === "steer" && <><Icon name="steering-wheel" /> Steer</>}
                 {mode === "generate" && (busy
-                  ? <>Working…</>
+                  ? <><Spinner /> Working…</>
                   : <><Icon name="sparkles" /> {hasPrior ? "Continue" : "Generate"}</>)}
               </button>
             </div>
@@ -2261,7 +2315,7 @@ function ExportButton({ genId, kind, onDone }) {
   }
   return (
     <button className="btn btn-ghost" onClick={click} disabled={busy} title={meta.title}>
-      <Icon name={busy ? "loader" : meta.icon} /> {busy ? `rendering ${meta.busy}…` : meta.button}
+      {busy ? <Spinner /> : <Icon name={meta.icon} />} {busy ? `rendering ${meta.busy}…` : meta.button}
     </button>
   );
 }

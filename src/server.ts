@@ -917,6 +917,21 @@ function route(req: Request, url: URL): Promise<Response> | Response {
   if (url.pathname === "/api/agents" && req.method === "GET") {
     return (async () => {
       const out = await Promise.all(ADAPTERS.map(probeAgent));
+      // Overlay persisted verify outcomes (engines with no native
+      // status command would otherwise always read "auth unknown").
+      for (const probe of out) {
+        try {
+          const raw = getSetting(`${probe.id}_auth_state`, "");
+          if (!raw) continue;
+          const v = JSON.parse(raw);
+          const age = Date.now() - (v.at || 0);
+          const ageTxt = age < 90_000 ? "just now" : age < 5_400_000 ? `${Math.round(age / 60_000)}m ago` : `${Math.round(age / 3_600_000)}h ago`;
+          if (probe.ok || v.ok) {
+            probe.ok = probe.ok && v.ok !== false;
+            probe.detail = `${v.detail} (checked ${ageTxt})`;
+          }
+        } catch {}
+      }
       const def = getSetting("default_agent_engine", DEFAULT_ENGINE);
       return json({ agents: out, default: ADAPTERS.some((a) => a.id === def) ? def : DEFAULT_ENGINE });
     })();
@@ -928,6 +943,9 @@ function route(req: Request, url: URL): Promise<Response> | Response {
       if (!a) return err("unknown engine", 404);
       if (!a.verifyAuth) return err("engine has no deep auth check (its availability probe is authoritative)", 400);
       const r = await a.verifyAuth();
+      // Persist the outcome so Settings and the shelf agree, across
+      // restarts, until the next check says otherwise.
+      setSetting(`${a.id}_auth_state`, JSON.stringify({ ...r, at: Date.now() }));
       probeCache.delete(a.id);   // availability detail may change
       return json(r);
     })();
