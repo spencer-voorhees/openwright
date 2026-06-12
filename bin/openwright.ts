@@ -162,7 +162,13 @@ async function update() {
   // exports silently.
   const venvPy = [join(ROOT, ".venv", "bin", "python"), join(ROOT, ".venv", "Scripts", "python.exe")].find(existsSync);
   if (venvPy) {
-    const pip = Bun.spawn({ cmd: [venvPy, "-m", "pip", "install", "-q", "-r", join(ROOT, "requirements.txt")], cwd: ROOT, stdout: "inherit", stderr: "inherit" });
+    // uv venvs are pip-less by design — prefer uv, fall back to pip.
+    const home = process.env.HOME || process.env.USERPROFILE || "";
+    const uv = [join(home, ".local", "bin", "uv"), join(home, ".local", "bin", "uv.exe")].find(existsSync) || (Bun.which("uv") ?? null);
+    const cmd = uv
+      ? [uv, "pip", "install", "-q", "-r", join(ROOT, "requirements.txt"), "--python", venvPy]
+      : [venvPy, "-m", "pip", "install", "-q", "-r", join(ROOT, "requirements.txt")];
+    const pip = Bun.spawn({ cmd, cwd: ROOT, stdout: "inherit", stderr: "inherit" });
     await pip.exited;
   }
   if (wasUp) { stop(); await new Promise((r) => setTimeout(r, 500)); await start(false, true); console.log("updated and restarted — reload the browser tab"); }
