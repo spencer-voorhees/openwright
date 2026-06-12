@@ -144,12 +144,28 @@ function openBrowser() {
 }
 
 async function update() {
+  if (!existsSync(join(ROOT, ".git"))) {
+    console.log("This install has no git history (zip install).");
+    console.log("Re-run the installer to update:");
+    console.log(platform() === "win32"
+      ? "  irm https://raw.githubusercontent.com/spencer-voorhees/openwright/main/install.ps1 | iex"
+      : "  curl -fsSL https://raw.githubusercontent.com/spencer-voorhees/openwright/main/install.sh | bash");
+    process.exit(1);
+  }
   const wasUp = await healthy();
   for (const cmd of [["git", "pull", "--ff-only"], [process.execPath, "install"]]) {
     const proc = Bun.spawn({ cmd, cwd: ROOT, stdout: "inherit", stderr: "inherit" });
     if (await proc.exited !== 0) process.exit(1);
   }
-  if (wasUp) { stop(); await new Promise((r) => setTimeout(r, 500)); await start(); }
+  // Refresh exporter deps when the repo venv exists — cheap and
+  // idempotent, and a changed requirements.txt otherwise breaks
+  // exports silently.
+  const venvPy = [join(ROOT, ".venv", "bin", "python"), join(ROOT, ".venv", "Scripts", "python.exe")].find(existsSync);
+  if (venvPy) {
+    const pip = Bun.spawn({ cmd: [venvPy, "-m", "pip", "install", "-q", "-r", join(ROOT, "requirements.txt")], cwd: ROOT, stdout: "inherit", stderr: "inherit" });
+    await pip.exited;
+  }
+  if (wasUp) { stop(); await new Promise((r) => setTimeout(r, 500)); await start(false, true); console.log("updated and restarted — reload the browser tab"); }
   else console.log("updated — `openwright start` when ready");
 }
 
