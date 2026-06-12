@@ -57,7 +57,7 @@ export function postUserReply(gen_id: number, content: string) {
 const steerNotes = new Map<number, string[]>();
 export function postSteer(gen_id: number, content: string) {
   const list = steerNotes.get(gen_id) || [];
-  list.push(content);
+  if (!list.includes(content)) list.push(content);
   steerNotes.set(gen_id, list);
   appendMessage(gen_id, "user", content);
   appendMessage(gen_id, "agent",
@@ -459,6 +459,13 @@ If anything material is ambiguous (audience, scope, intended length, missing dat
     }
     db.run("UPDATE generations SET artifact_path = ?, artifact_version = ? WHERE id = ?",
       [built.path, built.version, gen_id]);
+    const unconsumed = steerNotes.get(gen_id);
+    if (unconsumed?.length) {
+      steerNotes.delete(gen_id);
+      const n = unconsumed.length;
+      appendMessage(gen_id, "agent",
+        `[noted] The run finished before ${n === 1 ? "your steering note" : `${n} steering notes`} (above) reached the agent. Include what still applies in your next prompt.`);
+    }
     setStatus(gen_id, "done", { completed_at: Date.now() });
   } catch (e: any) {
     setStatus(gen_id, "errored", { error: String(e?.message || e).slice(0, 500), completed_at: Date.now() });
