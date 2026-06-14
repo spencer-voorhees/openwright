@@ -162,6 +162,7 @@ async function listWorkspaces() {
 const KNOWN_THEMES = new Set(["oneshot", "boardroom", "apple", "editorial", "graphite", "aurora", "twilight", "manuscript", "monolith", "bladerunner", "vesper", "apollo", "geist", "default"]);
 const KNOWN_ENGINES = new Set(["html"]);
 const KNOWN_PERSONAS = new Set(["terse-technical", "executive", "detailed", "mixed-audience"]);
+const KNOWN_ARTIFACT_TYPES = new Set(["deck", "document"]);
 
 // ─── design systems ───────────────────────────────────────────────────
 // Workspace-agnostic CSS bundles. A workspace points at one via
@@ -253,8 +254,8 @@ async function designSystemCss(id: string) {
 }
 
 async function createWorkspace(req: Request) {
-  const { name, engine, theme, design_system_id, agent_engine } = await req.json() as
-    { name: string; engine?: string; theme?: string; design_system_id?: number; agent_engine?: string };
+  const { name, engine, theme, design_system_id, agent_engine, artifact_type } = await req.json() as
+    { name: string; engine?: string; theme?: string; design_system_id?: number; agent_engine?: string; artifact_type?: string };
   if (!name || !name.trim()) return err("name required");
   const slug = slugify(name.trim());
   const now = Date.now();
@@ -283,8 +284,9 @@ async function createWorkspace(req: Request) {
   const fallbackEng = ADAPTERS.some((a) => a.id === settingEng) ? settingEng : DEFAULT_ENGINE;
   const agentEng = agent_engine && ADAPTERS.some((a) => a.id === agent_engine) ? agent_engine : fallbackEng;
   const agentModel = getSetting("default_agent_model", "");
-  db.run("INSERT INTO workspaces(slug, name, created_at, engine, theme, design_system_id, agent_engine, agent_model) VALUES(?, ?, ?, ?, ?, ?, ?, ?)",
-         [slug, name.trim(), now, eng, th, dsId, agentEng, agentModel]);
+  const artType = artifact_type && KNOWN_ARTIFACT_TYPES.has(artifact_type) ? artifact_type : "deck";
+  db.run("INSERT INTO workspaces(slug, name, created_at, engine, theme, design_system_id, agent_engine, agent_model, artifact_type) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         [slug, name.trim(), now, eng, th, dsId, agentEng, agentModel, artType]);
   workspaceDir(slug);
   return json({ workspace: workspaceBySlug(slug) }, 201);
 }
@@ -292,7 +294,7 @@ async function createWorkspace(req: Request) {
 async function updateWorkspace(slug: string, req: Request) {
   const w = workspaceBySlug(slug);
   if (!w) return err("not found", 404);
-  const body = await req.json() as { name?: string; engine?: string; theme?: string; design_system_id?: number; persona?: string; agent_engine?: string; agent_model?: string };
+  const body = await req.json() as { name?: string; engine?: string; theme?: string; design_system_id?: number; persona?: string; agent_engine?: string; agent_model?: string; artifact_type?: string };
   const sets: string[] = [];
   const vals: any[] = [];
   if (body.engine !== undefined && KNOWN_ENGINES.has(body.engine)) {
@@ -310,6 +312,9 @@ async function updateWorkspace(slug: string, req: Request) {
     sets.push("theme = ?"); vals.push(ds.slug);
   }
   if (body.name && body.name.trim()) { sets.push("name = ?"); vals.push(body.name.trim()); }
+  if (body.artifact_type !== undefined && KNOWN_ARTIFACT_TYPES.has(body.artifact_type)) {
+    sets.push("artifact_type = ?"); vals.push(body.artifact_type);
+  }
   if (body.persona !== undefined && KNOWN_PERSONAS.has(body.persona)) {
     sets.push("persona = ?"); vals.push(body.persona);
   }

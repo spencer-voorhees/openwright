@@ -119,7 +119,9 @@ addColumnIfMissing("workspaces",  "theme",               "TEXT NOT NULL DEFAULT 
 // BYOA: which agent adapter runs this workspace's generations.
 addColumnIfMissing("workspaces",  "agent_engine",        "TEXT NOT NULL DEFAULT 'claude'");
 addColumnIfMissing("workspaces",  "agent_model",         "TEXT NOT NULL DEFAULT ''");
+addColumnIfMissing("workspaces",  "artifact_type",       "TEXT NOT NULL DEFAULT 'deck'");
 addColumnIfMissing("design_systems", "builtin",           "INTEGER NOT NULL DEFAULT 0");
+addColumnIfMissing("design_systems", "artifact_type",     "TEXT NOT NULL DEFAULT 'deck'");
 // Authoring persona — drives the AGENT's writing voice. Default is
 // terse/technical; users can swap to executive-summary, detailed, or
 // mixed-audience via the workspace settings panel. Persona text gets

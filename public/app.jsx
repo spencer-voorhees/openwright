@@ -799,6 +799,7 @@ function PodCard({ ws, onOpen, onMenu }) {
 function NewWorkspaceModal({ onClose, onCreated }) {
   const [name, setName] = useState("");
   const [engine, setEngine] = useState("");
+  const [artifactType, setArtifactType] = useState("deck");
   const [agents, setAgents] = useState([]);
   const [busy, setBusy] = useState(false);
   const inputRef = useRef(null);
@@ -813,7 +814,7 @@ function NewWorkspaceModal({ onClose, onCreated }) {
     if (!name.trim() || busy) return;
     setBusy(true);
     try {
-      const d = await postJson("/api/workspaces", { name: name.trim(), agent_engine: engine || undefined });
+      const d = await postJson("/api/workspaces", { name: name.trim(), agent_engine: engine || undefined, artifact_type: artifactType });
       onCreated(d.workspace);
     } catch (e) { alert("create failed: " + e.message); }
     finally { setBusy(false); }
@@ -822,10 +823,20 @@ function NewWorkspaceModal({ onClose, onCreated }) {
     <div className="scrim" onClick={onClose}>
       <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
         <h3>New workspace</h3>
-        <p>A workspace is a folder on this host. Drop files into it, then generate a deck.</p>
+        <p>A workspace is a folder on this host. Drop files into it, then generate an artifact.</p>
         <input ref={inputRef} className="field" placeholder="e.g. Q3 board review"
                value={name} onChange={(e) => setName(e.target.value)} />
         <div className="ws-options">
+          <label className="opt">
+            <span>
+              <span className="opt-label">Type</span>
+              <span className="opt-sub">What the agent builds. Deck = slides (PPTX); Document = a flowing doc (DOCX).</span>
+            </span>
+            <select className="ws-settings-select" value={artifactType} onChange={(e) => setArtifactType(e.target.value)}>
+              <option value="deck">Deck</option>
+              <option value="document">Document</option>
+            </select>
+          </label>
           <label className="opt">
             <span>
               <span className="opt-label">Agent</span>
@@ -1010,6 +1021,25 @@ function WorkspaceSettingsButton({ ws, onChange, runActive }) {
       </button>
       {open && (
         <div className="ws-settings-pop">
+          <div className="ws-settings-row">
+            <div className="ws-settings-label">
+              <Icon name="layers" />
+              <span>Type</span>
+            </div>
+            <div className="ws-settings-control" style={{ flexDirection: "column", alignItems: "stretch", gap: 4 }}>
+              <select className="ws-settings-select" value={ws.artifact_type || "deck"}
+                      onChange={async (e) => {
+                        await patchJson(`/api/workspaces/${ws.slug}`, { artifact_type: e.target.value });
+                        onChange();
+                      }}>
+                <option value="deck">Deck</option>
+                <option value="document">Document</option>
+              </select>
+              <span style={{ fontSize: 10.5, color: "var(--wp-fg-faint)", lineHeight: 1.4 }}>
+                Changing type affects the NEXT generation; existing artifacts stay as built.
+              </span>
+            </div>
+          </div>
           <InlineAgentSelect ws={ws} onChange={onChange} runActive={runActive} />
           <div className="ws-settings-row">
             <div className="ws-settings-label">
