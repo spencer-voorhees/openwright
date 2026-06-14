@@ -1190,6 +1190,15 @@ Bun.serve({
             patched = patched.replace(/<head([^>]*)>/i,
               `<head$1><meta name="viewport" content="width=device-width, initial-scale=1">`);
           }
+          // Documents carry no deck shell, so the host's Edit button has
+          // nothing to talk to. Inject the doc-edit bridge (stripped on
+          // save) so inline editing works for documents too.
+          if (isDocArt) {
+            const tag = `<script src="/html-engine/doc-edit.js"></script>`;
+            patched = /<\/body>/i.test(patched)
+              ? patched.replace(/<\/body>/i, `${tag}</body>`)
+              : patched + tag;
+          }
           return new Response(patched, {
             headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" },
           });
