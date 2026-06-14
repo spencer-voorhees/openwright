@@ -20,6 +20,9 @@ import json
 import re
 import sys
 
+import os
+import zipfile
+
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
@@ -166,22 +169,26 @@ def cell_number(text: str):
 SENTINELS = {"", "-", "–", "—", ".", "n/a", "na", "tbd", "tbc", "—", "null"}
 
 
-def numeric_columns(rows: list) -> set:
-    """Decide column type once, for the whole column — a column is numeric
-    only if every real value in it is a number. So a code column with one
-    zero-padded ID stays text top to bottom instead of going half-and-half.
+def code_columns(rows: list) -> set:
+    """Columns to force entirely to TEXT because they're identifiers, not
+    quantities — so a code column never goes half text / half number.
+
+    The signal is a zero-padded value (0007) or an over-long digit run
+    (account/card numbers) ANYWHERE in the column. Every other column is
+    parsed cell-by-cell: real numbers become numbers (no "stored as text"
+    warning) and genuine text (N/A, a footnoted value) stays text — which
+    is how a real spreadsheet behaves, and what Excel won't flag.
     """
-    seen, broken = {}, set()
+    codes = set()
     for row in rows:
         for ci, c in enumerate(row.get("cells") or [], 1):
             t = (c.get("text") or "").strip()
-            if t.lower() in SENTINELS:
+            if not t or t.lower() in SENTINELS:
                 continue
-            if cell_number(t) is not None:
-                seen[ci] = seen.get(ci, 0) + 1
-            else:
-                broken.add(ci)            # a non-number lives here → text column
-    return {ci for ci, n in seen.items() if n and ci not in broken}
+            core = re.sub(r"[,$€£¥%()\s]", "", t)
+            if re.match(r"-?0\d", core) or len(re.sub(r"\D", "", core)) > 15:
+                codes.add(ci)
+    return codes
 
 
 def sanitize_title(name: str, used: set) -> str:
@@ -201,12 +208,15 @@ def build(data: dict, out_path: str):
     wb = Workbook()
     wb.remove(wb.active)
     used = set()
+    suppress = []   # (1-based sheet index, "A2:A3 C2:C3") — text-number ranges
 
+    sheet_i = 0
     for s in sheets:
         ws = wb.create_sheet(title=sanitize_title(s.get("name"), used))
+        sheet_i += 1
         widths = {}
         r = 1
-        num_cols = numeric_columns(s.get("rows") or [])
+        code_cols = code_columns(s.get("rows") or [])
 
         headers = s.get("headers") or []
         if headers:
@@ -220,13 +230,15 @@ def build(data: dict, out_path: str):
             ws.freeze_panes = f"A{r + 1}"
             r += 1
 
+        first_data_row = r
         for row in s.get("rows") or []:
             is_total = bool(row.get("total"))
             for ci, c in enumerate(row.get("cells") or [], 1):
                 text = c.get("text", "")
-                # Only columns the whole-column scan deemed numeric write
-                # numbers; a sentinel ("N/A") in a numeric column stays text.
-                num = cell_number(text) if ci in num_cols else None
+                # Code columns stay text (IDs); every other column parses
+                # per cell, so real numbers become numbers and genuine text
+                # (N/A, footnotes) stays text.
+                num = None if ci in code_cols else cell_number(text)
                 value = num if num is not None else text
                 cell = ws.cell(row=r, column=ci, value=value)
                 # Carry status/number color from the preview (pills, gains/
@@ -244,12 +256,49 @@ def build(data: dict, out_path: str):
                 widths[ci] = max(widths.get(ci, 0), len(str(text)))
             r += 1
 
+        # Code columns are text on purpose (to keep zero-padded IDs), but a
+        # numeric-looking code like "1001" would still draw Excel's
+        # "number stored as text" triangle. Record the range so we can tell
+        # Excel to ignore it (injected into the saved file below).
+        last_row = r - 1
+        if code_cols and last_row >= first_data_row:
+            refs = " ".join(f"{get_column_letter(ci)}{first_data_row}:{get_column_letter(ci)}{last_row}"
+                            for ci in sorted(code_cols))
+            suppress.append((sheet_i, refs))
+
         for ci, w in widths.items():
             ws.column_dimensions[get_column_letter(ci)].width = min(60, max(10, w + 3))
 
     if not wb.sheetnames:
         wb.create_sheet(title="Sheet 1")
     wb.save(out_path)
+    _inject_ignored_errors(out_path, suppress)
+
+
+def _inject_ignored_errors(path, suppress):
+    """openpyxl can't write <ignoredErrors>, so patch the saved xlsx zip:
+    add it to each sheetN.xml so Excel doesn't flag the intentional
+    text-number (code) cells."""
+    if not suppress:
+        return
+    frag_for = {f"xl/worksheets/sheet{i}.xml":
+                f'<ignoredErrors><ignoredError sqref="{refs}" numberStoredAsText="1"/></ignoredErrors>'
+                for i, refs in suppress}
+    tmp = path + ".tmp"
+    with zipfile.ZipFile(path) as zin, zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zout:
+        for item in zin.infolist():
+            data = zin.read(item.filename)
+            frag = frag_for.get(item.filename)
+            if frag:
+                xml = data.decode("utf-8")
+                # ignoredErrors must precede extLst (and close the sheet).
+                if "<extLst>" in xml:
+                    xml = xml.replace("<extLst>", frag + "<extLst>", 1)
+                else:
+                    xml = xml.replace("</worksheet>", frag + "</worksheet>", 1)
+                data = xml.encode("utf-8")
+            zout.writestr(item, data)
+    os.replace(tmp, path)
 
 
 def main():
