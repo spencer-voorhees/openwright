@@ -2541,9 +2541,11 @@ function DesignSystemEditor({ systemId, onBack, onChange }) {
   const [previewKey, setPreviewKey] = useState(0);
   const [editing, setEditing] = useState(false);   // false = preview only (default)
   // What the preview pane shows: the token spec sheet (default), or a
-  // worked example in either medium. Pure display — no effect on the
-  // system itself.
-  const [view, setView] = useState("specimen");   // "specimen" | "deck" | "document"
+  // worked example. The example can be either medium — a sub-picker
+  // inside the Example tab switches it. Pure display — no effect on
+  // the system itself.
+  const [view, setView] = useState("specimen");        // "specimen" | "example"
+  const [exampleMedium, setExampleMedium] = useState("deck");  // "deck" | "document"
 
   const load = useCallback(async () => {
     const d = await fetchJson(`/api/design-systems/${systemId}`);
@@ -2581,9 +2583,11 @@ function DesignSystemEditor({ systemId, onBack, onChange }) {
   if (!data) return <div className="ws-main"><div className="empty">loading…</div></div>;
 
   const hasDoc = !!(data && data.css_document);
+  // A system with no document variant can only show the deck example.
+  const medium = hasDoc ? exampleMedium : "deck";
   // Live preview URL: bust cache when CSS is dirty + after save.
   const viewParam = view === "specimen" ? "&mode=specimen"
-                  : view === "document" ? "&example=document" : "";
+                  : medium === "document" ? "&example=document" : "";
   const previewUrl = `/preview/__design-system-preview/${systemId}.html?v=${previewKey}${viewParam}`;
 
   return (
@@ -2606,19 +2610,24 @@ function DesignSystemEditor({ systemId, onBack, onChange }) {
                     title="Tokens, type scale, and components from this system's CSS">
               <Icon name="layout-list" /> Specimen
             </button>
-            <button className={view === "deck" ? "on" : ""}
-                    onClick={() => setView("deck")}
-                    title="A worked example deck rendered in this system">
-              <Icon name="presentation" /> Deck
+            <button className={view === "example" ? "on" : ""}
+                    onClick={() => setView("example")}
+                    title="A worked example rendered in this system">
+              <Icon name="presentation" /> Example
             </button>
-            {hasDoc && (
-              <button className={view === "document" ? "on" : ""}
-                      onClick={() => setView("document")}
-                      title="A worked example document rendered in this system">
+          </div>
+          {view === "example" && hasDoc && (
+            <div className="ds-view-seg ds-medium-seg" title="Which medium to preview">
+              <button className={medium === "deck" ? "on" : ""}
+                      onClick={() => setExampleMedium("deck")}>
+                <Icon name="presentation" /> Deck
+              </button>
+              <button className={medium === "document" ? "on" : ""}
+                      onClick={() => setExampleMedium("document")}>
                 <Icon name="file-text" /> Document
               </button>
-            )}
-          </div>
+            </div>
+          )}
           {builtin ? (
             <span className="ds-readonly" title="Built-in baseline — immutable in the app">
               <Icon name="lock" /> Built-in

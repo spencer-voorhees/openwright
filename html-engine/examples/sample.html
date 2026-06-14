@@ -6,69 +6,164 @@
 <link rel="stylesheet" href="/html-engine/themes/__active__.css">
 <style>
   /* Slide-level styles. Each <section> is a slide; deck-shell.js sizes
-     it to the authored 1920x1080 then scales to viewport. */
+     it to the authored 1920x1080 then scales to viewport. Everything
+     visual draws from the linked design system's tokens — this block
+     only arranges them into slide layouts. */
   body { margin: 0; }
   deck-stage:not(:defined) { visibility: hidden; }
   deck-stage section {
-    padding: 80px 96px;
+    padding: 96px 112px;
     display: flex;
     flex-direction: column;
     justify-content: center;
     gap: 32px;
   }
-  h1 { font-size: var(--type-title); font-weight: 700; letter-spacing: -0.02em; line-height: 1.05; margin: 0; }
-  h2 { font-size: var(--type-h2);    font-weight: 600; letter-spacing: -0.01em; line-height: 1.1; margin: 0; }
-  p  { font-size: var(--type-body);  line-height: 1.45; color: var(--fg-muted); margin: 0; max-width: 1500px; }
+
+  h1 { font-size: var(--type-title); font-weight: 700; letter-spacing: -0.02em; line-height: 1.04; margin: 0; }
+  h2 { font-size: var(--type-h2);    font-weight: 600; letter-spacing: -0.01em; line-height: 1.1;  margin: 0; }
+  p  { font-size: var(--type-body);  line-height: 1.45; color: var(--fg-muted); margin: 0; max-width: 1400px; }
+  .lede { font-size: var(--type-h3); line-height: 1.35; color: var(--fg-muted); max-width: 1300px; }
+
   .eyebrow { font-size: var(--type-small); text-transform: uppercase; letter-spacing: 0.12em;
              color: var(--accent); font-weight: 600; }
   ul { font-size: var(--type-body); line-height: 1.5; color: var(--fg-muted);
        padding-left: 1.2em; margin: 0; }
-  li { margin: 0.4em 0; }
+  li { margin: 0.5em 0; }
   li::marker { color: var(--accent); }
-  .accent-rule { width: 4px; height: 56px; background: var(--accent); }
-  .row { display: flex; gap: 24px; align-items: center; }
 
-  table { border-collapse: collapse; font-size: var(--type-small); }
-  th, td { padding: 14px 22px; border-bottom: 1px solid var(--border);
+  .accent-rule { width: 4px; height: 56px; background: var(--accent); flex: 0 0 auto; }
+  .row { display: flex; gap: 24px; align-items: center; }
+  .footer { margin-top: auto; font-size: var(--type-small); color: var(--fg-soft);
+            letter-spacing: 0.04em; }
+
+  /* Big-number metric band. */
+  .metrics { display: flex; gap: 64px; flex-wrap: wrap; }
+  .metric { display: flex; flex-direction: column; gap: 8px; }
+  .metric .big { font-size: 132px; font-weight: 700; line-height: 0.95;
+                 letter-spacing: -0.03em; color: var(--fg); }
+  .metric .big span { color: var(--accent); }
+  .metric .cap { font-size: var(--type-small); color: var(--fg-muted); max-width: 360px; }
+
+  /* Two-column split for compare / before-after. */
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 56px; }
+  .col h2 { font-size: var(--type-h3); margin-bottom: 18px; }
+
+  /* Pull-quote slide. */
+  .pull { font-size: 60px; font-weight: 600; line-height: 1.18; letter-spacing: -0.015em;
+          color: var(--fg); max-width: 1500px; border-left: 5px solid var(--accent);
+          padding-left: 40px; }
+
+  table { border-collapse: collapse; font-size: var(--type-small); width: 100%; }
+  th, td { padding: 16px 24px; border-bottom: 1px solid var(--border);
            text-align: left; vertical-align: top; }
-  th { font-weight: 600; color: var(--fg); }
+  thead th { font-weight: 700; color: var(--fg); text-transform: uppercase;
+             letter-spacing: 0.06em; font-size: calc(var(--type-small) - 1px);
+             border-bottom: 2px solid var(--border-strong); }
   td { color: var(--fg-muted); }
+  td strong { color: var(--fg); font-weight: 600; }
 </style>
 </head>
 <body>
 <deck-stage width="1920" height="1080">
 
+<!-- 1. Title -->
 <section>
   <div class="row"><div class="accent-rule"></div>
-    <span class="eyebrow">html-engine sample</span></div>
-  <h1>The HTML deck engine</h1>
-  <p>Agent writes HTML/CSS. Workpod renders it live. Same source ships to PPTX and PDF without a translation step.</p>
+    <span class="eyebrow">Field Report &middot; Cycle 12</span></div>
+  <h1>The Cartographer's Brief</h1>
+  <p class="lede">How a small survey craft maps an uncharted region in a single pass, and what the choices behind that pass teach about working under hard constraints.</p>
+  <div class="footer">Survey Office &middot; Prepared for the Standing Committee</div>
 </section>
 
+<!-- 2. Agenda -->
 <section>
-  <span class="eyebrow">Why it's better</span>
-  <h2>WYSIWYG instead of translation</h2>
+  <span class="eyebrow">What we'll cover</span>
+  <h2>Three questions, in order</h2>
   <ul>
-    <li>Agent writes HTML/CSS; rendered output is the source of truth</li>
-    <li>No padding/font/overlap surprises from pandoc geometry</li>
-    <li>Themes are CSS variables — way more powerful than reference.pptx surgery</li>
-    <li>Editable PPTX via DOM-walking export: each visual is a real shape</li>
+    <li>The approach &mdash; why one clean pass beats many partial sweeps</li>
+    <li>The instruments &mdash; what each sensor contributes, and where they overlap</li>
+    <li>The trade-off &mdash; what a single-pass map gives up, stated plainly</li>
   </ul>
 </section>
 
+<!-- 3. Thesis -->
 <section>
-  <span class="eyebrow">Pipeline</span>
-  <h2>One source, three outputs</h2>
+  <span class="eyebrow">The claim</span>
+  <h1>A map drawn in one pass is honest about its own seams.</h1>
+  <p>Repeated sweeps hide their gaps in the overlap. A single pass shows you exactly where the certainty ends &mdash; and that edge is the most useful line on the chart.</p>
+</section>
+
+<!-- 4. Metrics -->
+<section>
+  <span class="eyebrow">The pass, by the numbers</span>
+  <div class="metrics">
+    <div class="metric">
+      <div class="big">1<span>&times;</span></div>
+      <div class="cap">Complete sweep of the region, no return trips</div>
+    </div>
+    <div class="metric">
+      <div class="big">3</div>
+      <div class="cap">Sensor bands, fused into one continuous chart</div>
+    </div>
+    <div class="metric">
+      <div class="big">92<span>%</span></div>
+      <div class="cap">Coverage at survey grade on the first attempt</div>
+    </div>
+  </div>
+</section>
+
+<!-- 5. Two-column -->
+<section>
+  <span class="eyebrow">The shape of the work</span>
+  <div class="cols">
+    <div class="col">
+      <h2>What the pass gains</h2>
+      <ul>
+        <li>A single coordinate frame across the whole region</li>
+        <li>No seams from stitching separate surveys together</li>
+        <li>A clear, honest boundary where resolution falls off</li>
+      </ul>
+    </div>
+    <div class="col">
+      <h2>What it costs</h2>
+      <ul>
+        <li>The outer band is a sketch, not a survey</li>
+        <li>Drift accumulates the further from the known edge</li>
+        <li>Fine detail waits for a second, targeted cycle</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- 6. Comparison table -->
+<section>
+  <span class="eyebrow">Coverage at a glance</span>
+  <h2>Three bands, one chart</h2>
   <table>
     <thead>
-      <tr><th>Format</th><th>How</th><th>Editable?</th></tr>
+      <tr><th>Band</th><th>Instrument</th><th>Resolution</th><th>Status</th></tr>
     </thead>
     <tbody>
-      <tr><td>HTML (live)</td><td>direct render in workpod iframe</td><td>—</td></tr>
-      <tr><td>PDF</td><td>chromium --print-to-pdf at 1920×1080</td><td>no</td></tr>
-      <tr><td>PPTX</td><td>playwright walks DOM → python-pptx primitives</td><td>yes</td></tr>
+      <tr><td><strong>Inner</strong></td><td>Optical sweep</td><td>High</td><td>Complete</td></tr>
+      <tr><td><strong>Middle</strong></td><td>Echo ranging</td><td>Medium</td><td>Partial</td></tr>
+      <tr><td><strong>Outer</strong></td><td>Drift estimate</td><td>Low</td><td>Queued for next cycle</td></tr>
     </tbody>
   </table>
+</section>
+
+<!-- 7. Pull quote -->
+<section>
+  <span class="eyebrow">The principle</span>
+  <div class="pull">"Show the reader where the certainty ends. The edge of the map is the most honest line on it."</div>
+</section>
+
+<!-- 8. Close -->
+<section>
+  <div class="row"><div class="accent-rule"></div>
+    <span class="eyebrow">Next cycle</span></div>
+  <h1>Sharpen the outer band.</h1>
+  <p class="lede">One targeted pass over the drift estimate turns the sketch into a survey. The frame is already in place &mdash; the next cycle only fills it in.</p>
+  <div class="footer">Survey Office &middot; End of brief</div>
 </section>
 
 </deck-stage>

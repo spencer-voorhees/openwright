@@ -1382,6 +1382,10 @@ select option { background-color: #161618; color: #f5f5f7; }
 .ds-view-seg button.on { background: var(--wp-elev-2); color: var(--wp-fg); }
 .ds-view-seg button svg { width: 13px; height: 13px; }
 @media (max-width: 760px) { .ds-view-seg button span { display: none; } }
+/* The Example tab's medium sub-picker: a quieter, accent-tinted segment
+   that reads as a child of the main view toggle, not a peer. */
+.ds-medium-seg { background: transparent; border-style: dashed; }
+.ds-medium-seg button.on { background: var(--wp-accent); color: var(--wp-accent-fg); }
 
 /* Built-in (immutable) marker in the design-system head */
 .ds-readonly { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--wp-fg-faint); border: 1px solid var(--wp-border); border-radius: 999px; padding: 5px 11px; }
