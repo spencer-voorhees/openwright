@@ -2612,8 +2612,8 @@ function DesignSystemEditor({ systemId, onBack, onChange }) {
             </button>
             <button className={view === "example" ? "on" : ""}
                     onClick={() => setView("example")}
-                    title="A worked example rendered in this system">
-              <Icon name="presentation" /> Example
+                    title="Worked examples rendered in this system">
+              <Icon name="presentation" /> Examples
             </button>
           </div>
           {view === "example" && hasDoc && (

@@ -44,9 +44,9 @@
   .metric .big span { color: var(--accent); }
   .metric .cap { font-size: var(--type-small); color: var(--fg-muted); max-width: 360px; }
 
-  /* Two-column split for compare / before-after. */
-  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 56px; }
-  .col h2 { font-size: var(--type-h3); margin-bottom: 18px; }
+  /* Card row — the .card component itself is styled by the design
+     system; this only lays three of them across. */
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 32px; }
 
   /* Pull-quote slide. */
   .pull { font-size: 60px; font-weight: 600; line-height: 1.18; letter-spacing: -0.015em;
@@ -71,7 +71,7 @@
   <div class="row"><div class="accent-rule"></div>
     <span class="eyebrow">Field Report &middot; Cycle 12</span></div>
   <h1>The Cartographer's Brief</h1>
-  <p class="lede">How a small survey craft maps an uncharted region in a single pass, and what the choices behind that pass teach about working under hard constraints.</p>
+  <p class="lede">Mapping an uncharted region in a single pass &mdash; and what that one pass teaches about working under hard constraints.</p>
   <div class="footer">Survey Office &middot; Prepared for the Standing Committee</div>
 </section>
 
@@ -89,8 +89,8 @@
 <!-- 3. Thesis -->
 <section>
   <span class="eyebrow">The claim</span>
-  <h1>A map drawn in one pass is honest about its own seams.</h1>
-  <p>Repeated sweeps hide their gaps in the overlap. A single pass shows you exactly where the certainty ends &mdash; and that edge is the most useful line on the chart.</p>
+  <h1>A map drawn in one pass is honest about its seams.</h1>
+  <p>Repeated sweeps hide their gaps in the overlap. One pass shows exactly where the certainty ends &mdash; the most useful line on the chart.</p>
 </section>
 
 <!-- 4. Metrics -->
@@ -112,25 +112,28 @@
   </div>
 </section>
 
-<!-- 5. Two-column -->
+<!-- 5. Cards -->
 <section>
-  <span class="eyebrow">The shape of the work</span>
-  <div class="cols">
-    <div class="col">
-      <h2>What the pass gains</h2>
-      <ul>
-        <li>A single coordinate frame across the whole region</li>
-        <li>No seams from stitching separate surveys together</li>
-        <li>A clear, honest boundary where resolution falls off</li>
-      </ul>
+  <span class="eyebrow">The instruments</span>
+  <h2>Three bands, three sensors</h2>
+  <div class="cards">
+    <div class="card">
+      <div class="bar green"></div>
+      <span class="kicker">01 / Optical</span>
+      <h3>Inner band</h3>
+      <p>A high-resolution sweep of the known edge. Complete this cycle.</p>
     </div>
-    <div class="col">
-      <h2>What it costs</h2>
-      <ul>
-        <li>The outer band is a sketch, not a survey</li>
-        <li>Drift accumulates the further from the known edge</li>
-        <li>Fine detail waits for a second, targeted cycle</li>
-      </ul>
+    <div class="card">
+      <div class="bar"></div>
+      <span class="kicker">02 / Echo</span>
+      <h3>Middle band</h3>
+      <p>Medium-resolution ranging across the transition. Partial coverage.</p>
+    </div>
+    <div class="card">
+      <div class="bar red"></div>
+      <span class="kicker">03 / Drift</span>
+      <h3>Outer band</h3>
+      <p>A low-resolution drift estimate. Queued for the next pass.</p>
     </div>
   </div>
 </section>
@@ -162,7 +165,7 @@
   <div class="row"><div class="accent-rule"></div>
     <span class="eyebrow">Next cycle</span></div>
   <h1>Sharpen the outer band.</h1>
-  <p class="lede">One targeted pass over the drift estimate turns the sketch into a survey. The frame is already in place &mdash; the next cycle only fills it in.</p>
+  <p class="lede">One targeted pass turns the sketch into a survey. The frame is already in place; the next cycle only fills it in.</p>
   <div class="footer">Survey Office &middot; End of brief</div>
 </section>
 
