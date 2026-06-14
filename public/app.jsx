@@ -1997,7 +1997,7 @@ function CommentsSection({ artifactId, wsSlug, refreshKey, onKickedOff, onJumpTo
                       setKicking(true);
                       try {
                         const d = await postJson(`/api/workspaces/${wsSlug}/generate`,
-                          { prompt: "Address the outstanding open comments on this artifact. Make the targeted edits each comment asks for — do not redesign unrelated slides.",
+                          { prompt: "Address the outstanding open comments on this artifact. Make the targeted edits each comment asks for, and leave the rest of the artifact unchanged.",
                             artifact_id: artifactId });
                         onKickedOff?.(d?.generation_id);
                         setOpen(false);   // hand off to the agent chat — one panel at a time
