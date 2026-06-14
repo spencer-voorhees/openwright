@@ -872,6 +872,9 @@ function WorkspaceView({ slug, wsTab, setWsTab, onBack, onChange, autoNew, onAut
   const [composerBusy, setComposerBusy] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [newArtifactOpen, setNewArtifactOpen] = useState(false);
+  // When Generate is hit with no artifact yet, stash the prompt, make
+  // the user create+type an artifact, then run it on the new artifact.
+  const [pendingPrompt, setPendingPrompt] = useState(null);
   // On mobile the agent pane's visibility is the Files/Agent tab, not
   // the drawer flag — open/close must drive both or taps appear dead.
   const openAgent = useCallback(() => { setDrawerOpen(true); setWsTab("agent"); }, [setWsTab]);
@@ -899,13 +902,35 @@ function WorkspaceView({ slug, wsTab, setWsTab, onBack, onChange, autoNew, onAut
     if (autoNew) { setNewArtifactOpen(true); onAutoNewConsumed?.(); }
   }, [autoNew]);
 
+  // Kick a generation against a specific artifact and follow it.
+  const runGeneration = useCallback(async (artifactId, prompt, fresh = false) => {
+    setComposerBusy(true);
+    openAgent();
+    try {
+      const d = await postJson(`/api/workspaces/${slug}/generate`,
+        { prompt: prompt?.trim() || undefined, fresh, artifact_id: artifactId });
+      setActiveArtifactId(d.artifact_id || artifactId);
+      setActiveGen(d.generation_id);
+      refresh();
+    } catch (e) { alert("kickoff failed: " + e.message); }
+    finally { setComposerBusy(false); }
+  }, [slug, refresh, openAgent]);
+
   const createArtifact = useCallback(async ({ name, artifact_type }) => {
     const d = await postJson(`/api/workspaces/${slug}/artifacts`, { name, artifact_type });
     setNewArtifactOpen(false);
-    setActiveArtifactId(d.artifact.id);
+    const newId = d.artifact.id;
+    setActiveArtifactId(newId);
     setActiveGen(null);
     await refresh();
-  }, [slug, refresh]);
+    // If this artifact was created because the user hit Generate with
+    // none yet, run their prompt now against the new artifact.
+    if (pendingPrompt !== null) {
+      const pp = pendingPrompt;
+      setPendingPrompt(null);
+      await runGeneration(newId, pp);
+    }
+  }, [slug, refresh, pendingPrompt, runGeneration]);
 
   // Active run drives the polling cadence.
   // Fall back to the workspace's live run: without this, opening the
@@ -986,7 +1011,9 @@ function WorkspaceView({ slug, wsTab, setWsTab, onBack, onChange, autoNew, onAut
                     agentOpen={drawerOpen}
                     onToggleAgent={() => (drawerOpen ? closeAgent() : openAgent())} />
       </div>
-      {newArtifactOpen && <NewArtifactModal onClose={() => setNewArtifactOpen(false)} onCreate={createArtifact} />}
+      {newArtifactOpen && <NewArtifactModal
+        onClose={() => { setNewArtifactOpen(false); setPendingPrompt(null); }}
+        onCreate={createArtifact} />}
       <AgentDrawer
         ws={ws} generation={activeGenRow}
         open={drawerOpen}
@@ -994,17 +1021,14 @@ function WorkspaceView({ slug, wsTab, setWsTab, onBack, onChange, autoNew, onAut
         onClose={closeAgent}
         hasPrior={generations.some((g) => g.status === "done" && g.artifact_path)}
         onGenerate={async (prompt, { fresh = false } = {}) => {
-          setComposerBusy(true);
-          openAgent();
-          try {
-            const d = await postJson(`/api/workspaces/${slug}/generate`,
-                                      { prompt: prompt?.trim() || undefined, fresh,
-                                        artifact_id: resolvedArtifactId });
-            setActiveArtifactId(d.artifact_id || resolvedArtifactId);
-            setActiveGen(d.generation_id);
-            refresh();
-          } catch (e) { alert("kickoff failed: " + e.message); }
-          finally { setComposerBusy(false); }
+          // No artifact yet → make the user create+type one first, then
+          // run their prompt against it (no silent Untitled default).
+          if (!resolvedArtifactId) {
+            setPendingPrompt(prompt ?? "");
+            setNewArtifactOpen(true);
+            return;
+          }
+          await runGeneration(resolvedArtifactId, prompt, fresh);
         }}
         busy={composerBusy}
         files={regularFiles} notes={notes}
