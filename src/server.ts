@@ -1176,12 +1176,20 @@ Bun.serve({
           const art = artSlug
             ? db.query("SELECT artifact_type FROM artifacts WHERE workspace_id = ? AND slug = ?").get(ws.id, artSlug) as any
             : null;
-          const variant = art && (art.artifact_type || "deck") === "document" ? "?type=document" : "";
+          const isDocArt = art && (art.artifact_type || "deck") === "document";
+          const variant = isDocArt ? "?type=document" : "";
           const html = readFileSync(t, "utf-8");
-          const patched = html.replace(
+          let patched = html.replace(
             /<link\s+rel="stylesheet"\s+href="\/api\/design-systems\/\d+\/css\.css(?:\?[^"]*)?"\s*\/?>/i,
             `<link rel="stylesheet" href="/api/design-systems/${ws.design_system_id}/css.css${variant}">`,
           );
+          // Safety net for documents authored before the viewport-meta
+          // guidance: without it, mobile renders the page at ~980px and
+          // scrolls horizontally. Inject one if the doc lacks it.
+          if (isDocArt && !/name=["']viewport["']/i.test(patched)) {
+            patched = patched.replace(/<head([^>]*)>/i,
+              `<head$1><meta name="viewport" content="width=device-width, initial-scale=1">`);
+          }
           return new Response(patched, {
             headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" },
           });

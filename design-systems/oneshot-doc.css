@@ -1,4 +1,4 @@
-/* v1 */
+/* v2 */
 /* ============================================================
    Oneshot — Document
    The document sibling of Oneshot. Same export-lossless promise,
@@ -83,9 +83,15 @@ body {
   padding: 72px 64px 96px;
   min-height: 100vh;
   box-sizing: border-box;
+  /* Long URLs / unbroken tokens must wrap, not push the page wide. */
+  overflow-wrap: break-word;
+  word-wrap: break-word;
 }
 @media (max-width: 760px) {
   .doc-page { padding: 40px 22px 64px; }
+  /* Wide tables scroll inside their own box instead of stretching the
+     whole page (which would force horizontal scroll on the document). */
+  table, .doc-table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 }
 
 /* ── headings ──────────────────────────────────────────────── */

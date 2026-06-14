@@ -150,9 +150,15 @@ function buildSystemPrompt(ws: any, files: any[], userPrompt?: string, artifact?
   const buildSection = isDoc ? `# The document
 
 Write a flowing HTML document — NOT slides. No deck shell, no
-<deck-stage>, no fixed canvas. Structure:
+<deck-stage>, no fixed canvas. Output a COMPLETE HTML file, and put a
+mobile viewport meta in the head so it reads correctly on phones:
 
-    <link rel="stylesheet" href="${dsCssUrl}">
+    <!doctype html>
+    <html><head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <link rel="stylesheet" href="${dsCssUrl}">
+    </head><body>
     <article class="doc-page">
       <p class="eyebrow">Section · Category</p>
       <h1>The document title</h1>
@@ -168,6 +174,7 @@ Write a flowing HTML document — NOT slides. No deck shell, no
       <div class="alert info"><strong>Note.</strong> A callout aside.</div>
       <table><thead>…</thead><tbody>…</tbody></table>
     </article>
+    </body></html>
 
 The single .doc-page article is the whole document; it scrolls. openwright
 renders it live and exports to PDF (chromium print) and to editable DOCX
