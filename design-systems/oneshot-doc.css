@@ -1,4 +1,4 @@
-/* v2 */
+/* v4 */
 /* ============================================================
    Oneshot — Document
    The document sibling of Oneshot. Same export-lossless promise,
@@ -75,9 +75,13 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* The document itself: one centered column on a white sheet. */
+/* The document itself: one centered column on a white sheet. The
+   measure flexes with the frame — it fills a wide preview (and the
+   expanded view) instead of stranding the page at a fixed width with
+   a wide gray margin, but stays capped for readability. Print pins it
+   full-width with its own margins (see @media print below). */
 .doc-page {
-  max-width: var(--measure);
+  max-width: min(1040px, 94%);
   margin: 0 auto;
   background: var(--white);
   padding: 72px 64px 96px;
@@ -206,11 +210,15 @@ blockquote, .quote {
 table, .doc-table {
   width: 100%; border-collapse: collapse; margin: 0 0 22px;
   font-size: var(--type-small);
+  /* Fixed layout + wrapping cells keep a wide table inside the page
+     instead of bleeding past the measure into the margin. */
+  table-layout: fixed;
 }
 th, td {
   text-align: left; padding: 10px 14px;
   border-bottom: 1px solid var(--border);
   vertical-align: top;
+  overflow-wrap: break-word; word-break: break-word;
 }
 thead th {
   font-size: var(--type-eyebrow);
@@ -241,4 +249,20 @@ thead th {
   font-size: var(--type-small); color: var(--fg-muted);
   padding: 14px 0 4px; margin-bottom: 8px;
   border-bottom: 1px solid var(--mist-rule);
+}
+
+/* ── print / PDF ───────────────────────────────────────────────
+   On screen the page is a centered white sheet on a soft-gray desk.
+   In a PDF that desk printed as gray bars down the sides — so for
+   print the desk goes white and the document fills the page with its
+   own margins, like an exported Word doc. */
+@media print {
+  body { background: var(--white); }
+  .doc-page {
+    max-width: none;
+    margin: 0;
+    min-height: 0;
+    padding: 0.5in 0.7in;
+    box-shadow: none;
+  }
 }
