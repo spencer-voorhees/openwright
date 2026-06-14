@@ -1207,7 +1207,7 @@ function InlineDesignSystemSelect({ ws, onChange }) {
   );
 }
 
-function ArtifactSelector({ ws, artifacts, activeArtifactId, onSelect, onChange, onNewArtifact }) {
+function ArtifactSelector({ ws, artifacts, activeArtifactId, onSelect, onChange, onNewArtifact, runActive }) {
   const [open, setOpen] = useState(false);
   useEffect(() => {
     if (!open) return;
@@ -1216,8 +1216,11 @@ function ArtifactSelector({ ws, artifacts, activeArtifactId, onSelect, onChange,
     return () => window.removeEventListener("click", close);
   }, [open]);
   const active = artifacts.find((a) => a.id === activeArtifactId);
-  const create = () => { setOpen(false); onNewArtifact?.(); };
+  // While a run is in flight, the active artifact is locked — switching,
+  // creating, renaming, or deleting mid-build would orphan the run.
+  const create = () => { if (runActive) return; setOpen(false); onNewArtifact?.(); };
   const rename = async () => {
+    if (runActive) return;
     setOpen(false);
     if (!active) return;
     const name = prompt(`Rename artifact "${active.name}" to:`, active.name);
@@ -1228,6 +1231,7 @@ function ArtifactSelector({ ws, artifacts, activeArtifactId, onSelect, onChange,
     } catch (e) { alert("rename failed: " + e.message); }
   };
   const remove = async () => {
+    if (runActive) return;
     setOpen(false);
     if (!active) return;
     if (!confirm(`Delete artifact "${active.name}"? Its versions stay on disk but the chat history is severed.`)) return;
@@ -1247,9 +1251,17 @@ function ArtifactSelector({ ws, artifacts, activeArtifactId, onSelect, onChange,
       {open && (
         <div className="vhist ws-artifact-menu">
           <div className="eyebrow" style={{ padding: "4px 8px 8px" }}>Artifacts</div>
-          {artifacts.map((a) => (
-            <div className={"vrow" + (a.id === activeArtifactId ? " cur" : "")} key={a.id}
-              onClick={() => { setOpen(false); onSelect?.(a.id); }}>
+          {runActive && (
+            <div className="art-lock-note">
+              <Icon name="lock" style={{ width: 12, height: 12 }} />
+              Locked while the agent is working
+            </div>
+          )}
+          {artifacts.map((a) => {
+            const locked = runActive && a.id !== activeArtifactId;
+            return (
+            <div className={"vrow" + (a.id === activeArtifactId ? " cur" : "") + (locked ? " is-locked" : "")} key={a.id}
+              onClick={() => { if (locked) return; setOpen(false); onSelect?.(a.id); }}>
               <Icon name={artifactTypeIcon(a.artifact_type)} className="vrow-type-ic" />
               <div className="vmain">
                 <div className="vlabel">
@@ -1260,12 +1272,15 @@ function ArtifactSelector({ ws, artifacts, activeArtifactId, onSelect, onChange,
                 {a.latest_version && <div className="vtime">v{a.latest_version}</div>}
               </div>
             </div>
-          ))}
+            );
+          })}
+          {!runActive && (
           <div className="vrow" onClick={create}>
             <span className="vdot" style={{ background: "transparent", border: "1px dashed var(--wp-fg-faint)" }} />
             <div className="vmain"><div className="vlabel">+ New artifact</div></div>
           </div>
-          {active && (
+          )}
+          {active && !runActive && (
             <>
               <div className="vrow" onClick={rename}>
                 <Icon name="edit-3" style={{ width: 12, height: 12, opacity: 0.6 }} />
@@ -1391,6 +1406,7 @@ function FilesPanel({ ws, files, notes, generations, artifacts, activeArtifactId
                                 activeArtifactId={activeArtifactId}
                                 onSelect={onSelectArtifact}
                                 onNewArtifact={onNewArtifact}
+                                runActive={wsRunActive}
                                 onChange={onChange} />
               <WorkspaceSettingsButton ws={ws} onChange={onChange} runActive={wsRunActive} />
             </span>
@@ -1936,7 +1952,7 @@ function CommentsSection({ artifactId, wsSlug, refreshKey, onKickedOff, onJumpTo
       </button>
       {open && (
         <div className="vhist chist">
-          <form className="comment-form" onSubmit={submit}>
+          <form className={"comment-form" + (isDoc ? " comment-form-doc" : "")} onSubmit={submit}>
             {!isDoc && (
               <input className="comment-slide-input" type="number" min="1"
                      placeholder="Slide #" value={slideIdx}
