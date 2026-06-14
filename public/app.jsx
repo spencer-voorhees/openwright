@@ -1153,10 +1153,15 @@ function InlineDesignSystemSelect({ ws, onChange }) {
       .then((d) => setSystems(d.design_systems || []))
       .catch(() => setSystems([]));
   }, []);
+  // Only show systems that match the workspace's artifact type — a doc
+  // workspace must not pick a deck theme (the CSS targets a different
+  // medium) and vice versa.
+  const wsType = ws.artifact_type || "deck";
+  const matching = systems.filter((s) => (s.artifact_type || "deck") === wsType);
   let currentId = ws.design_system_id;
-  if (!currentId && systems.length) {
-    const bySlug = systems.find((s) => s.slug === (ws.theme || "oneshot"));
-    currentId = (bySlug || systems[0]).id;
+  if (!currentId && matching.length) {
+    const bySlug = matching.find((s) => s.slug === (ws.theme || "oneshot"));
+    currentId = (bySlug || matching[0]).id;
   }
   return (
     <select className="ws-settings-select" value={currentId || ""}
@@ -1164,7 +1169,7 @@ function InlineDesignSystemSelect({ ws, onChange }) {
               await patchJson(`/api/workspaces/${ws.slug}`, { design_system_id: Number(e.target.value) });
               onChange();
             }}>
-      {systems.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+      {matching.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
     </select>
   );
 }

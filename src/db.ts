@@ -183,7 +183,7 @@ function seedBuiltinDesignSystems() {
   const fs = require("node:fs");
   const path = require("node:path");
   const dsDir = path.join(import.meta.dir, "..", "design-systems");
-  let manifest: Array<{ name: string; slug: string; description: string }> = [];
+  let manifest: Array<{ name: string; slug: string; description: string; artifact_type?: string }> = [];
   try {
     manifest = JSON.parse(fs.readFileSync(path.join(dsDir, "manifest.json"), "utf-8"));
   } catch {
@@ -201,13 +201,13 @@ function seedBuiltinDesignSystems() {
     catch { continue; }
     const existing = db.query("SELECT id, css FROM design_systems WHERE slug = ?").get(b.slug) as any;
     if (!existing) {
-      db.run("INSERT INTO design_systems(name, slug, css, description, builtin, created_at, updated_at) VALUES(?, ?, ?, ?, 1, ?, ?)",
-        [b.name, b.slug, css, b.description, now, now]);
+      db.run("INSERT INTO design_systems(name, slug, css, description, builtin, artifact_type, created_at, updated_at) VALUES(?, ?, ?, ?, 1, ?, ?, ?)",
+        [b.name, b.slug, css, b.description, b.artifact_type || "deck", now, now]);
       continue;
     }
     // Always re-assert the builtin flag (cheap, idempotent) so existing
     // rows from before this column existed get marked read-only.
-    db.run("UPDATE design_systems SET builtin = 1 WHERE slug = ?", [b.slug]);
+    db.run("UPDATE design_systems SET builtin = 1, artifact_type = ? WHERE slug = ?", [b.artifact_type || "deck", b.slug]);
     if (bundledVersion(css) > bundledVersion(existing.css || "")) {
       db.run("UPDATE design_systems SET name = ?, css = ?, description = ?, builtin = 1, updated_at = ? WHERE slug = ?",
         [b.name, css, b.description, now, b.slug]);

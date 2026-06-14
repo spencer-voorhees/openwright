@@ -159,7 +159,7 @@ async function listWorkspaces() {
   return json({ workspaces: rows });
 }
 
-const KNOWN_THEMES = new Set(["oneshot", "boardroom", "apple", "editorial", "graphite", "aurora", "twilight", "manuscript", "monolith", "bladerunner", "vesper", "apollo", "geist", "default"]);
+const KNOWN_THEMES = new Set(["oneshot", "oneshot-doc", "boardroom", "apple", "editorial", "graphite", "aurora", "twilight", "manuscript", "monolith", "bladerunner", "vesper", "apollo", "geist", "default"]);
 const KNOWN_ENGINES = new Set(["html"]);
 const KNOWN_PERSONAS = new Set(["terse-technical", "executive", "detailed", "mixed-audience"]);
 const KNOWN_ARTIFACT_TYPES = new Set(["deck", "document"]);
@@ -171,7 +171,7 @@ const KNOWN_ARTIFACT_TYPES = new Set(["deck", "document"]);
 
 async function listDesignSystems() {
   const rows = db.query(
-    `SELECT id, name, slug, description, builtin, length(css) as css_size, created_at, updated_at
+    `SELECT id, name, slug, description, builtin, artifact_type, length(css) as css_size, created_at, updated_at
      FROM design_systems ORDER BY id ASC`).all();
   return json({ design_systems: rows });
 }
@@ -260,9 +260,12 @@ async function createWorkspace(req: Request) {
   const slug = slugify(name.trim());
   const now = Date.now();
   const eng = engine && KNOWN_ENGINES.has(engine) ? engine : "html";
-  // Default design system for new workspaces: Oneshot — engineered to
-  // survive the editable-PPTX export losslessly.
-  const th = theme && KNOWN_THEMES.has(theme) ? theme : "oneshot";
+  const artType = artifact_type && KNOWN_ARTIFACT_TYPES.has(artifact_type) ? artifact_type : "deck";
+  // Default design system depends on the artifact type: decks get
+  // Oneshot, documents get Oneshot Document — both export-lossless for
+  // their medium.
+  const defaultTheme = artType === "document" ? "oneshot-doc" : "oneshot";
+  const th = theme && KNOWN_THEMES.has(theme) ? theme : defaultTheme;
   // Resolve the design system. If the client passed an id, use it.
   // Otherwise fall back to the system whose slug matches `theme`, then
   // to whatever the first seeded system is. This keeps html mode (which
@@ -277,14 +280,13 @@ async function createWorkspace(req: Request) {
     if (bySlug) dsId = bySlug.id;
   }
   if (!dsId) {
-    const first = db.query("SELECT id FROM design_systems ORDER BY id ASC LIMIT 1").get() as any;
-    if (first) dsId = first.id;
+    const firstOfType = db.query("SELECT id FROM design_systems WHERE artifact_type = ? ORDER BY id ASC LIMIT 1").get(artType) as any;
+    if (firstOfType) dsId = firstOfType.id;
   }
   const settingEng = getSetting("default_agent_engine", DEFAULT_ENGINE);
   const fallbackEng = ADAPTERS.some((a) => a.id === settingEng) ? settingEng : DEFAULT_ENGINE;
   const agentEng = agent_engine && ADAPTERS.some((a) => a.id === agent_engine) ? agent_engine : fallbackEng;
   const agentModel = getSetting("default_agent_model", "");
-  const artType = artifact_type && KNOWN_ARTIFACT_TYPES.has(artifact_type) ? artifact_type : "deck";
   db.run("INSERT INTO workspaces(slug, name, created_at, engine, theme, design_system_id, agent_engine, agent_model, artifact_type) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)",
          [slug, name.trim(), now, eng, th, dsId, agentEng, agentModel, artType]);
   workspaceDir(slug);
