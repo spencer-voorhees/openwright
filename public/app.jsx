@@ -223,6 +223,7 @@ function App() {
   const [menu, setMenu] = useState(null);            // {ws, x, y}
   const [modal, setModal] = useState(null);
   const [wsTab, setWsTab] = useState("files");      // mobile only
+  const [freshWs, setFreshWs] = useState(null);     // slug just created → auto-open first artifact
 
   const refresh = useCallback(async () => {
     const d = await fetchJson("/api/workspaces");
@@ -286,6 +287,8 @@ function App() {
         {view === "workspace" && (
           <WorkspaceView key={activeSlug} slug={activeSlug}
                           wsTab={wsTab} setWsTab={setWsTab}
+                          autoNew={freshWs === activeSlug}
+                          onAutoNewConsumed={() => setFreshWs(null)}
                           onBack={backToDashboard} onChange={refresh} />
         )}
         {view === "design-systems" && (
@@ -308,7 +311,7 @@ function App() {
       )}
       {modal?.type === "new-ws" && (
         <NewWorkspaceModal onClose={() => setModal(null)}
-          onCreated={(ws) => { setModal(null); refresh(); openWs(ws.slug); }} />
+          onCreated={(ws) => { setModal(null); refresh(); setFreshWs(ws.slug); openWs(ws.slug); }} />
       )}
     </div>
   );
@@ -854,12 +857,13 @@ function NewWorkspaceModal({ onClose, onCreated }) {
 // WORKSPACE VIEW (3-pane)
 // ═══════════════════════════════════════════════════════════════
 
-function WorkspaceView({ slug, wsTab, setWsTab, onBack, onChange }) {
+function WorkspaceView({ slug, wsTab, setWsTab, onBack, onChange, autoNew, onAutoNewConsumed }) {
   const [data, setData] = useState(null);
   const [activeGen, setActiveGen] = useState(null);
   const [activeArtifactId, setActiveArtifactId] = useState(null);
   const [composerBusy, setComposerBusy] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [newArtifactOpen, setNewArtifactOpen] = useState(false);
   // On mobile the agent pane's visibility is the Files/Agent tab, not
   // the drawer flag — open/close must drive both or taps appear dead.
   const openAgent = useCallback(() => { setDrawerOpen(true); setWsTab("agent"); }, [setWsTab]);
@@ -879,6 +883,21 @@ function WorkspaceView({ slug, wsTab, setWsTab, onBack, onChange }) {
   }, [slug, activeGen, onChange]);
 
   useEffect(() => { refresh(); }, [slug]);
+
+  // A freshly created workspace opens the New Artifact dialog straight
+  // away so the first artifact is always named + typed, never a silent
+  // default. Consume the signal so it fires once.
+  useEffect(() => {
+    if (autoNew) { setNewArtifactOpen(true); onAutoNewConsumed?.(); }
+  }, [autoNew]);
+
+  const createArtifact = useCallback(async ({ name, artifact_type }) => {
+    const d = await postJson(`/api/workspaces/${slug}/artifacts`, { name, artifact_type });
+    setNewArtifactOpen(false);
+    setActiveArtifactId(d.artifact.id);
+    setActiveGen(null);
+    await refresh();
+  }, [slug, refresh]);
 
   // Active run drives the polling cadence.
   // Fall back to the workspace's live run: without this, opening the
@@ -952,12 +971,14 @@ function WorkspaceView({ slug, wsTab, setWsTab, onBack, onChange }) {
                     artifacts={artifacts}
                     activeArtifactId={resolvedArtifactId}
                     onSelectArtifact={(id) => { setActiveArtifactId(id); setActiveGen(null); }}
+                    onNewArtifact={() => setNewArtifactOpen(true)}
                     onBack={onBack} onChange={refresh}
                     onActivate={(id) => setActiveGen(id)}
                     onOpenAgent={openAgent}
                     agentOpen={drawerOpen}
                     onToggleAgent={() => (drawerOpen ? closeAgent() : openAgent())} />
       </div>
+      {newArtifactOpen && <NewArtifactModal onClose={() => setNewArtifactOpen(false)} onCreate={createArtifact} />}
       <AgentDrawer
         ws={ws} generation={activeGenRow}
         open={drawerOpen}
@@ -1142,9 +1163,8 @@ function InlineDesignSystemSelect({ ws, onChange }) {
   );
 }
 
-function ArtifactSelector({ ws, artifacts, activeArtifactId, onSelect, onChange }) {
+function ArtifactSelector({ ws, artifacts, activeArtifactId, onSelect, onChange, onNewArtifact }) {
   const [open, setOpen] = useState(false);
-  const [creating, setCreating] = useState(false);
   useEffect(() => {
     if (!open) return;
     const close = () => setOpen(false);
@@ -1152,13 +1172,7 @@ function ArtifactSelector({ ws, artifacts, activeArtifactId, onSelect, onChange 
     return () => window.removeEventListener("click", close);
   }, [open]);
   const active = artifacts.find((a) => a.id === activeArtifactId);
-  const create = () => { setOpen(false); setCreating(true); };
-  const doCreate = async ({ name, artifact_type }) => {
-    const d = await postJson(`/api/workspaces/${ws.slug}/artifacts`, { name, artifact_type });
-    setCreating(false);
-    onSelect?.(d.artifact.id);
-    await onChange?.();
-  };
+  const create = () => { setOpen(false); onNewArtifact?.(); };
   const rename = async () => {
     setOpen(false);
     if (!active) return;
@@ -1221,7 +1235,6 @@ function ArtifactSelector({ ws, artifacts, activeArtifactId, onSelect, onChange 
           )}
         </div>
       )}
-      {creating && <NewArtifactModal onClose={() => setCreating(false)} onCreate={doCreate} />}
     </span>
   );
 }
@@ -1269,7 +1282,7 @@ function NewArtifactModal({ onClose, onCreate }) {
 }
 
 function FilesPanel({ ws, files, notes, generations, artifacts, activeArtifactId,
-                       onSelectArtifact, onBack, onChange, onActivate, onOpenAgent,
+                       onSelectArtifact, onNewArtifact, onBack, onChange, onActivate, onOpenAgent,
                        agentOpen, onToggleAgent }) {
   // Expanded = the artifact card (and its section header) escape the
   // standard measure to the full window; remembered per browser.
@@ -1333,6 +1346,7 @@ function FilesPanel({ ws, files, notes, generations, artifacts, activeArtifactId
               <ArtifactSelector ws={ws} artifacts={artifacts || []}
                                 activeArtifactId={activeArtifactId}
                                 onSelect={onSelectArtifact}
+                                onNewArtifact={onNewArtifact}
                                 onChange={onChange} />
               <WorkspaceSettingsButton ws={ws} onChange={onChange} runActive={wsRunActive} />
             </span>
@@ -1371,10 +1385,13 @@ function FilesPanel({ ws, files, notes, generations, artifacts, activeArtifactId
           <div className="dropzone" style={{ borderStyle: "solid" }}>
             <div className="dz-title">No artifacts yet</div>
             <div className="dz-sub">
-              Create an artifact from the selector above (name it, pick deck or
-              document), then add a prompt and hit
-              <strong style={{ color: "var(--wp-fg)" }}> Generate</strong> — the agent reads everything here and builds it.
+              An artifact is one deliverable — a deck or a document. Create one,
+              then add a prompt and hit
+              <strong style={{ color: "var(--wp-fg)" }}> Generate</strong>.
             </div>
+            <button className="btn btn-primary" style={{ marginTop: 14 }} onClick={onNewArtifact}>
+              <Icon name="plus" /> Create your first artifact
+            </button>
           </div>
         )}
 
