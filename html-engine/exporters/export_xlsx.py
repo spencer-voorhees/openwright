@@ -50,9 +50,21 @@ DOM_WALK_JS = r"""
       ? Array.from(headRow.querySelectorAll('th,td')).map(c => ({ text: txt(c), num: !!cellNum(c) }))
       : [];
 
+    // Status pills can't be a shape inside a cell, but their meaning
+    // carries: export the pill's text in the pill's color with its tint
+    // as the fill. Colored numbers (.pos/.neg) carry their font color too.
+    const cellData = (c) => {
+      const tinted = c.querySelector('.pill, .pos, .neg, .positive, .negative');
+      const pill = c.querySelector('.pill');
+      return {
+        text: txt(c), num: !!cellNum(c),
+        color: tinted ? getComputedStyle(tinted).color : '',
+        fill: pill ? getComputedStyle(pill).backgroundColor : '',
+      };
+    };
     const bodyRows = Array.from(t.querySelectorAll('tbody tr')).map(tr => ({
       total: tr.classList.contains('total') || tr.classList.contains('subtotal'),
-      cells: Array.from(tr.querySelectorAll('td,th')).map(c => ({ text: txt(c), num: !!cellNum(c) })),
+      cells: Array.from(tr.querySelectorAll('td,th')).map(cellData),
     })).filter(r => r.cells.length);
 
     // A table with no <tbody> — treat all rows after the first as data.
@@ -62,7 +74,7 @@ DOM_WALK_JS = r"""
       for (let i = start; i < rows.length; i++) {
         bodyRows.push({
           total: rows[i].classList.contains('total'),
-          cells: Array.from(rows[i].querySelectorAll('td,th')).map(c => ({ text: txt(c), num: !!cellNum(c) })),
+          cells: Array.from(rows[i].querySelectorAll('td,th')).map(cellData),
         });
       }
     }
@@ -106,6 +118,27 @@ def parse_number(s: str):
     if val == int(val):
         return int(val)
     return round(val, 6)
+
+
+def rgb_to_hex(value):
+    """A computed CSS color (rgb()/rgba()/#hex) → openpyxl 'RRGGBB', or None
+    for empty/transparent (so the default styling is kept)."""
+    if not value:
+        return None
+    v = value.strip()
+    nums = re.findall(r"-?\d*\.?\d+", v)
+    if v.startswith("rgb") and len(nums) >= 3:
+        if len(nums) >= 4 and float(nums[3]) == 0:
+            return None
+        clamp = lambda x: max(0, min(255, int(round(float(x)))))
+        # Explicit FF alpha so Excel never reads it as transparent.
+        return "FF{:02X}{:02X}{:02X}".format(clamp(nums[0]), clamp(nums[1]), clamp(nums[2]))
+    if v.startswith("#"):
+        h = v.lstrip("#")
+        if len(h) == 3:
+            h = "".join(c * 2 for c in h)
+        return ("FF" + h).upper() if len(h) == 6 else None
+    return None
 
 
 def cell_number(text: str):
@@ -196,11 +229,17 @@ def build(data: dict, out_path: str):
                 num = cell_number(text) if ci in num_cols else None
                 value = num if num is not None else text
                 cell = ws.cell(row=r, column=ci, value=value)
-                cell.font = Font(bold=is_total or ci == 1, color=INK, size=11)
+                # Carry status/number color from the preview (pills, gains/
+                # losses); plain cells stay ink.
+                fhex = rgb_to_hex(c.get("color")) or INK
+                cell.font = Font(bold=is_total or ci == 1, color=fhex, size=11)
                 cell.border = BORDER
                 cell.alignment = Alignment(
                     horizontal="right" if num is not None else "left", vertical="center")
-                if is_total:
+                bg = rgb_to_hex(c.get("fill"))
+                if bg:
+                    cell.fill = PatternFill("solid", fgColor=bg)
+                elif is_total:
                     cell.fill = TOTAL_FILL
                 widths[ci] = max(widths.get(ci, 0), len(str(text)))
             r += 1
