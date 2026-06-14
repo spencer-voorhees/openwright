@@ -1246,15 +1246,11 @@ function NewArtifactModal({ onClose, onCreate }) {
     <div className="scrim" onClick={onClose}>
       <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
         <h3>New artifact</h3>
-        <p>Give it a name and pick what it is. The agent builds and versions this artifact on its own.</p>
         <input ref={inputRef} className="field" placeholder="e.g. Q3 Board Review"
                value={name} onChange={(e) => setName(e.target.value)} />
         <div className="ws-options">
           <label className="opt">
-            <span>
-              <span className="opt-label">Type</span>
-              <span className="opt-sub">Deck = slides, exports to PPTX. Document = a flowing doc, exports to DOCX.</span>
-            </span>
+            <span className="opt-label">Type</span>
             <select className="ws-settings-select" value={type} onChange={(e) => setType(e.target.value)}>
               <option value="deck">Deck</option>
               <option value="document">Document</option>
