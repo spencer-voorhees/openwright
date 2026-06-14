@@ -102,7 +102,7 @@ DOM_WALK_JS = r"""
     if (tag === 'h1' || hasClass(el, 'title')) { blocks.push({ type: 'h1', runs: runs(el) }); continue; }
     if (tag === 'h2') { blocks.push({ type: 'h2', runs: runs(el) }); continue; }
     if (tag === 'h3') { blocks.push({ type: 'h3', runs: runs(el) }); continue; }
-    if (hasClass(el, 'eyebrow') || hasClass(el, 'kicker')) { blocks.push({ type: 'eyebrow', text: text(el) }); continue; }
+    if (hasClass(el, 'eyebrow') || hasClass(el, 'kicker')) { blocks.push({ type: 'eyebrow', text: text(el), color: getComputedStyle(el).color }); continue; }
     if (hasClass(el, 'lede')) { blocks.push({ type: 'lede', runs: runs(el) }); continue; }
     if (hasClass(el, 'doc-meta')) {
       blocks.push({ type: 'meta', items: Array.from(el.children).map(text).filter(Boolean) || [text(el)] });
@@ -251,7 +251,8 @@ def build(data: dict, out_path: str):
             r.font.name = SANS
             r.font.size = Pt(PX_TO_PT["eyebrow"])
             r.bold = True
-            r.font.color.rgb = accent
+            # Honor a recolored eyebrow; fall back to the system accent.
+            r.font.color.rgb = css_color(b.get("color")) or accent
             _set_tracking(r, 120)
 
         elif t == "h1":
