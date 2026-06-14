@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>html-engine sample spreadsheet</title>
+<style>
+  /* The example links the live design system CSS below; this block only
+     neutralizes the host page chrome. Everything visual comes from the
+     system's spreadsheet variant. */
+  body { margin: 0; }
+</style>
+<link rel="stylesheet" href="/html-engine/themes/__active__.css">
+</head>
+<body>
+  <div class="workbook">
+    <h1 class="workbook-title">The Helios Survey — Flight Log</h1>
+    <p class="workbook-sub">Cycle 12 · readings per shell, fused into one workbook. Each table below exports as its own worksheet.</p>
+
+    <section class="sheet-wrap">
+      <div class="sheet-name">Coverage</div>
+      <table class="sheet">
+        <thead>
+          <tr><th>Shell</th><th>Instrument</th><th class="num">Coverage %</th><th class="num">Targets</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Inner orbit</td><td>Optical sweep</td><td class="num">96</td><td class="num">412</td><td><span class="pill available">Complete</span></td></tr>
+          <tr><td>Mid belt</td><td>Spectral array</td><td class="num">61</td><td class="num">188</td><td><span class="pill gated">Partial</span></td></tr>
+          <tr><td>Outer dark</td><td>Gravimetric</td><td class="num">18</td><td class="num">37</td><td><span class="pill parked">Queued</span></td></tr>
+          <tr class="total"><td>All shells</td><td>Fused</td><td class="num">58</td><td class="num">637</td><td></td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="sheet-wrap">
+      <div class="sheet-name">Power budget</div>
+      <table class="sheet">
+        <thead>
+          <tr><th>Subsystem</th><th class="num">Allocated (W)</th><th class="num">Draw (W)</th><th class="num">Margin (W)</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Optical sweep</td><td class="num">120</td><td class="num">118</td><td class="num">2</td></tr>
+          <tr><td>Spectral array</td><td class="num">90</td><td class="num">86</td><td class="num">4</td></tr>
+          <tr><td>Gravimetric</td><td class="num">60</td><td class="num">44</td><td class="num">16</td></tr>
+          <tr><td>Avionics</td><td class="num">75</td><td class="num">72</td><td class="num">3</td></tr>
+          <tr class="total"><td>Total</td><td class="num">345</td><td class="num">320</td><td class="num">25</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="sheet-wrap">
+      <div class="sheet-name">Findings</div>
+      <table class="sheet">
+        <thead>
+          <tr><th>ID</th><th>Shell</th><th>Note</th><th class="num">Confidence</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>OBJ-IN-0001</td><td>Inner orbit</td><td>Four planets resolved; orbits firm.</td><td class="num">0.98</td></tr>
+          <tr><td>OBJ-MB-0004</td><td>Mid belt</td><td>Two ice candidates, water signature.</td><td class="num">0.62</td></tr>
+          <tr><td>OBJ-OD-0007</td><td>Outer dark</td><td>Gravimetric anomaly; unseen body?</td><td class="num">0.21</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </div>
+</body>
+</html>

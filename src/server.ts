@@ -162,7 +162,13 @@ async function listWorkspaces() {
 const KNOWN_THEMES = new Set(["oneshot", "oneshot-doc", "boardroom", "apple", "editorial", "graphite", "aurora", "twilight", "manuscript", "monolith", "bladerunner", "vesper", "apollo", "geist", "default"]);
 const KNOWN_ENGINES = new Set(["html"]);
 const KNOWN_PERSONAS = new Set(["terse-technical", "executive", "detailed", "mixed-audience"]);
-const KNOWN_ARTIFACT_TYPES = new Set(["deck", "document"]);
+const KNOWN_ARTIFACT_TYPES = new Set(["deck", "document", "spreadsheet"]);
+// artifact_type → the design-system CSS variant query param it renders with.
+function variantParam(artifactType: string | null | undefined): string {
+  if (artifactType === "document") return "?type=document";
+  if (artifactType === "spreadsheet") return "?type=spreadsheet";
+  return "";
+}
 
 // ─── design systems ───────────────────────────────────────────────────
 // Workspace-agnostic CSS bundles. A workspace points at one via
@@ -172,7 +178,8 @@ const KNOWN_ARTIFACT_TYPES = new Set(["deck", "document"]);
 async function listDesignSystems() {
   const rows = db.query(
     `SELECT id, name, slug, description, builtin, length(css) as css_size,
-            (length(css_document) > 0) as has_document, created_at, updated_at
+            (length(css_document) > 0) as has_document,
+            (length(css_spreadsheet) > 0) as has_spreadsheet, created_at, updated_at
      FROM design_systems ORDER BY id ASC`).all();
   return json({ design_systems: rows });
 }
@@ -246,13 +253,15 @@ async function deleteDesignSystem(id: string) {
 // it directly. Path: /api/design-systems/:id/css.css (Spencer reads
 // the resource as a stylesheet — Bun infers the content type from the
 // .css suffix on the URL, but we set it explicitly for safety).
-async function designSystemCss(id: string, variant: "deck" | "document" = "deck") {
-  const row = db.query("SELECT css, css_document FROM design_systems WHERE id = ?").get(id) as any;
+async function designSystemCss(id: string, variant: "deck" | "document" | "spreadsheet" = "deck") {
+  const row = db.query("SELECT css, css_document, css_spreadsheet FROM design_systems WHERE id = ?").get(id) as any;
   if (!row) return new Response("/* design system not found */", { status: 404, headers: { "content-type": "text/css" } });
-  // Documents pull the document variant; if a system has no document
-  // variant (deck-only custom systems) fall back to the deck CSS so it
-  // still renders rather than coming up blank.
-  const css = variant === "document" ? (row.css_document || row.css || "") : (row.css || "");
+  // Each medium pulls its own variant; a system with no variant for that
+  // medium (e.g. a deck-only custom system) falls back to the deck CSS so
+  // it still renders rather than coming up blank.
+  const css = variant === "document" ? (row.css_document || row.css || "")
+            : variant === "spreadsheet" ? (row.css_spreadsheet || row.css || "")
+            : (row.css || "");
   return new Response(css, {
     headers: { "content-type": "text/css; charset=utf-8", "cache-control": "no-cache" },
   });
@@ -746,6 +755,9 @@ const HTML_PPTX_IMAGE_EXPORT = join(import.meta.dir, "..", "html-engine", "expor
 // only, so this maps each block to an editable Word construct rather
 // than rasterizing. Output sits next to the .html as <base>.docx.
 const HTML_DOCX_EXPORT       = join(import.meta.dir, "..", "html-engine", "exporters", "export_docx.py");
+// DOM-walking HTML → XLSX export. Each <table class="sheet"> becomes an
+// editable worksheet. Output sits next to the .html as <base>.xlsx.
+const HTML_XLSX_EXPORT       = join(import.meta.dir, "..", "html-engine", "exporters", "export_xlsx.py");
 
 // Kill an active generation on user request. If the in-memory loop is
 // gone (server restarted under it), mark the row directly so the UI
@@ -821,6 +833,35 @@ async function exportDocxFromHtml(gen_id: string) {
   return json({ ok: true, path: outPath });
 }
 
+// HTML → XLSX. Gated to spreadsheet artifacts. Walks each rendered
+// <table class="sheet"> into an editable worksheet.
+async function exportXlsxFromHtml(gen_id: string) {
+  const g = db.query("SELECT * FROM generations WHERE id = ?").get(gen_id) as any;
+  if (!g || !g.artifact_path) return err("no artifact", 404);
+  g.artifact_path = resolveArtifact(g.artifact_path);
+  if (!/\.html$/i.test(g.artifact_path)) return err("export-xlsx requires an HTML artifact", 400);
+  if (!existsSync(g.artifact_path)) return err("artifact file missing on disk", 404);
+  const art = db.query("SELECT artifact_type FROM artifacts WHERE id = ?").get(g.artifact_id) as any;
+  if (art && (art.artifact_type || "deck") !== "spreadsheet") {
+    return err("export-xlsx is only available for spreadsheet artifacts", 400);
+  }
+  if (!existsSync(HTML_XLSX_EXPORT)) return err("html-engine xlsx exporter not found", 500);
+  const m = String(g.artifact_path).replace(/\\/g, "/").match(/\/workspaces\/(.+)$/);
+  if (!m) return err("could not derive preview path", 500);
+  const previewUrl = `http://127.0.0.1:${PORT}/preview/${m[1]}`;
+  const outPath = g.artifact_path.replace(/\.html$/i, ".xlsx");
+  const proc = Bun.spawn({
+    cmd: [PYTHON_BIN, HTML_XLSX_EXPORT, "--url", previewUrl, "--out", outPath],
+    stderr: "pipe", stdout: "pipe",
+  });
+  const exitCode = await proc.exited;
+  if (exitCode !== 0 || !existsSync(outPath)) {
+    const stderr = proc.stderr ? await new Response(proc.stderr).text() : "";
+    return err(`xlsx export failed (exit ${exitCode}): ${stderr.slice(-500)}`, 500);
+  }
+  return json({ ok: true, path: outPath });
+}
+
 // Build a friendly download filename like
 // "dit-theme-migration-untitled-deck-v22.pptx" so saved files identify
 // which workspace and artifact they belong to. Strips the "untitled"
@@ -854,7 +895,7 @@ function exportFilename(artifact_path: string, kind: string): string {
 
 // Serve an exported PDF/PPTX sibling of the gen's html artifact —
 // `<base>.pdf` / `<base>.pptx` next to the .html file.
-async function downloadExport(gen_id: string, kind: "pdf" | "pptx" | "pptx-image" | "docx") {
+async function downloadExport(gen_id: string, kind: "pdf" | "pptx" | "pptx-image" | "docx" | "xlsx") {
   const g = db.query("SELECT * FROM generations WHERE id = ?").get(gen_id) as any;
   if (!g || !g.artifact_path) return err("no artifact", 404);
   g.artifact_path = resolveArtifact(g.artifact_path);
@@ -866,6 +907,8 @@ async function downloadExport(gen_id: string, kind: "pdf" | "pptx" | "pptx-image
     ? "application/pdf"
     : kind === "docx"
     ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    : kind === "xlsx"
+    ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     : "application/vnd.openxmlformats-officedocument.presentationml.presentation";
   return new Response(Bun.file(out), {
     headers: {
@@ -888,7 +931,7 @@ async function saveEdits(gen_id: string, req: Request) {
   const body = await req.json() as { html?: string };
   if (!body.html || typeof body.html !== "string") return err("html body required", 400);
   // Resolve next version path. Pattern: ".../deck-vN.html" → "deck-v(N+1).html".
-  const m = g.artifact_path.match(/^(.+\/(?:deck|doc)-v)(\d+)(\.html)$/i);
+  const m = g.artifact_path.match(/^(.+\/(?:deck|doc|sheet)-v)(\d+)(\.html)$/i);
   if (!m) return err("artifact_path does not follow deck-vN.html convention", 400);
   let nextV = parseInt(m[2], 10) + 1;
   let newPath = `${m[1]}${nextV}${m[3]}`;
@@ -1061,10 +1104,12 @@ function route(req: Request, url: URL): Promise<Response> | Response {
   if ((mt = m("/api/generations/(\\d+)/export-pptx")) && req.method === "POST") return exportPptxFromHtml(mt[1], "dom");
   if ((mt = m("/api/generations/(\\d+)/export-pptx-image")) && req.method === "POST") return exportPptxFromHtml(mt[1], "image");
   if ((mt = m("/api/generations/(\\d+)/export-docx")) && req.method === "POST") return exportDocxFromHtml(mt[1]);
+  if ((mt = m("/api/generations/(\\d+)/export-xlsx")) && req.method === "POST") return exportXlsxFromHtml(mt[1]);
   if ((mt = m("/api/generations/(\\d+)/download-pdf")) && req.method === "GET") return downloadExport(mt[1], "pdf");
   if ((mt = m("/api/generations/(\\d+)/download-pptx")) && req.method === "GET") return downloadExport(mt[1], "pptx");
   if ((mt = m("/api/generations/(\\d+)/download-pptx-image")) && req.method === "GET") return downloadExport(mt[1], "pptx-image");
   if ((mt = m("/api/generations/(\\d+)/download-docx")) && req.method === "GET") return downloadExport(mt[1], "docx");
+  if ((mt = m("/api/generations/(\\d+)/download-xlsx")) && req.method === "GET") return downloadExport(mt[1], "xlsx");
   if ((mt = m("/api/artifacts/(\\d+)")) && req.method === "GET") return downloadArtifact(mt[1]);
   if ((mt = m("/api/files/(\\d+)")) && req.method === "GET") return downloadFile(mt[1]);
   if (path === "/api/design-systems" && req.method === "GET")  return listDesignSystems();
@@ -1072,7 +1117,10 @@ function route(req: Request, url: URL): Promise<Response> | Response {
   if ((mt = m("/api/design-systems/(\\d+)")) && req.method === "GET")    return getDesignSystem(mt[1]);
   if ((mt = m("/api/design-systems/(\\d+)")) && req.method === "PATCH")  return updateDesignSystem(mt[1], req);
   if ((mt = m("/api/design-systems/(\\d+)")) && req.method === "DELETE") return deleteDesignSystem(mt[1]);
-  if ((mt = m("/api/design-systems/(\\d+)/css\\.css")) && req.method === "GET") return designSystemCss(mt[1], url.searchParams.get("type") === "document" ? "document" : "deck");
+  if ((mt = m("/api/design-systems/(\\d+)/css\\.css")) && req.method === "GET") {
+    const t = url.searchParams.get("type");
+    return designSystemCss(mt[1], t === "document" ? "document" : t === "spreadsheet" ? "spreadsheet" : "deck");
+  }
 
   return err("not found", 404);
 }
@@ -1136,6 +1184,7 @@ Bun.serve({
       let cssVariant = "";
       if (mode === "specimen") file = "showcase.html";
       else if (example === "document") { file = "sample-doc.html"; cssVariant = "?type=document"; }
+      else if (example === "spreadsheet") { file = "sample-sheet.html"; cssVariant = "?type=spreadsheet"; }
       const sourcePath = join(import.meta.dir, "..", "html-engine", "examples", file);
       if (!existsSync(sourcePath)) {
         return new Response(`${file} not found`, { status: 404 });
@@ -1172,28 +1221,33 @@ Bun.serve({
         const ws = db.query("SELECT id, design_system_id FROM workspaces WHERE slug = ?").get(wsSlug) as any;
         if (ws && ws.design_system_id) {
           // The artifact's own type picks the variant: documents pull
-          // the system's document CSS, decks the deck CSS.
+          // the document CSS, spreadsheets the spreadsheet CSS, decks the
+          // deck CSS.
           const art = artSlug
             ? db.query("SELECT artifact_type FROM artifacts WHERE workspace_id = ? AND slug = ?").get(ws.id, artSlug) as any
             : null;
-          const isDocArt = art && (art.artifact_type || "deck") === "document";
-          const variant = isDocArt ? "?type=document" : "";
+          const artType = (art?.artifact_type || "deck");
+          // Non-deck mediums (document, spreadsheet) share the same
+          // treatment: variant CSS, a mobile viewport, and the edit
+          // bridge (they carry no deck shell).
+          const isNonDeck = artType === "document" || artType === "spreadsheet";
+          const variant = variantParam(artType);
           const html = readFileSync(t, "utf-8");
           let patched = html.replace(
             /<link\s+rel="stylesheet"\s+href="\/api\/design-systems\/\d+\/css\.css(?:\?[^"]*)?"\s*\/?>/i,
             `<link rel="stylesheet" href="/api/design-systems/${ws.design_system_id}/css.css${variant}">`,
           );
-          // Safety net for documents authored before the viewport-meta
+          // Safety net for files authored before the viewport-meta
           // guidance: without it, mobile renders the page at ~980px and
-          // scrolls horizontally. Inject one if the doc lacks it.
-          if (isDocArt && !/name=["']viewport["']/i.test(patched)) {
+          // scrolls. Inject one if missing.
+          if (isNonDeck && !/name=["']viewport["']/i.test(patched)) {
             patched = patched.replace(/<head([^>]*)>/i,
               `<head$1><meta name="viewport" content="width=device-width, initial-scale=1">`);
           }
-          // Documents carry no deck shell, so the host's Edit button has
-          // nothing to talk to. Inject the doc-edit bridge (stripped on
-          // save) so inline editing works for documents too.
-          if (isDocArt) {
+          // Non-deck artifacts carry no deck shell, so the host's Edit
+          // button has nothing to talk to. Inject the edit bridge
+          // (stripped on save) so inline editing works for them too.
+          if (isNonDeck) {
             const tag = `<script src="/html-engine/doc-edit.js"></script>`;
             patched = /<\/body>/i.test(patched)
               ? patched.replace(/<\/body>/i, `${tag}</body>`)

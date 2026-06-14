@@ -1,0 +1,175 @@
+/* v1 */
+/* ============================================================
+   Oneshot — Spreadsheet
+   The spreadsheet sibling of Oneshot. The artifact is a styled HTML
+   grid; a DOM-walking exporter turns each <table class="sheet"> into a
+   real worksheet in an editable XLSX. The discipline lives here: clean
+   gridlines, a shaded header row, right-aligned numerics, and banded
+   rows — everything Excel represents natively, so the export comes out
+   one-for-one.
+   ============================================================ */
+
+:root {
+  --font-sans:  "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono:  "SF Mono", Menlo, Consolas, "Courier New", monospace;
+
+  /* palette — identical to the deck baseline so themes stay portable */
+  --ink:      #1D1D1F;
+  --stone:    #6E6E73;
+  --silver:   #86868B;
+  --mist:     #D2D2D7;
+  --bone:     #E8E8ED;
+  --paper:    #F5F5F7;
+  --white:    #FFFFFF;
+  --accent:        #0071E3;
+  --accent-deep:   #0058B8;
+  --accent-soft:   #2997FF;
+  --accent-tint:   #EBF3FD;
+  --accent-wash:   #F5F9FE;
+  --st-available:  #1A8A3C;
+  --st-gated:      #C97F00;
+  --st-parked:     #6E6E73;
+  --negative:      #D93025;
+  --negative-tint: #FCEDEB;
+  --positive:      #1A8A3C;
+  --positive-tint: #EAF5EE;
+  --grid:          #E3E4E8;
+  --grid-strong:   #CFD1D7;
+
+  --bg:       var(--white);
+  --bg-soft:  var(--paper);
+  --fg:       var(--ink);
+  --fg-muted: var(--stone);
+
+  /* type — data-dense, sized to read a grid at a glance */
+  --type-title:   24px;
+  --type-name:    13px;   /* sheet tab label */
+  --type-head:    11px;   /* column header */
+  --type-cell:    13px;   /* data cell */
+  --type-small:   11px;
+}
+
+/* ── page ──────────────────────────────────────────────────── */
+body {
+  margin: 0;
+  background: var(--bg-soft);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: var(--type-cell);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* The workbook holds one or more sheets, stacked. */
+.workbook {
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 28px 28px 64px;
+  box-sizing: border-box;
+}
+
+.workbook-title {
+  font-family: var(--font-sans);
+  font-size: var(--type-title);
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  margin: 0 0 4px;
+}
+.workbook-sub { font-size: var(--type-small); color: var(--fg-muted); margin: 0 0 24px; }
+
+/* ── one sheet ─────────────────────────────────────────────── */
+.sheet-wrap { margin: 0 0 36px; }
+
+/* Tab-style label above the grid. */
+.sheet-name {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: var(--type-name); font-weight: 650; color: var(--fg);
+  background: var(--white);
+  border: 1px solid var(--grid-strong); border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  padding: 7px 16px;
+}
+.sheet-name::before {
+  content: ""; width: 8px; height: 8px; border-radius: 2px;
+  background: var(--accent);
+}
+
+/* ── the grid ──────────────────────────────────────────────── */
+table.sheet, table {
+  border-collapse: collapse;
+  width: 100%;
+  background: var(--white);
+  font-size: var(--type-cell);
+  border: 1px solid var(--grid-strong);
+  table-layout: auto;
+}
+
+table.sheet th, table.sheet td, table th, table td {
+  border: 1px solid var(--grid);
+  padding: 7px 12px;
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+/* Header row — shaded, bold, uppercase tracking. */
+table.sheet thead th, table thead th {
+  background: var(--paper);
+  font-size: var(--type-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-muted);
+  border-bottom: 1.5px solid var(--grid-strong);
+  position: sticky; top: 0;
+}
+
+/* Banded rows for legibility down a long column. */
+table.sheet tbody tr:nth-child(even) td { background: var(--bg-soft); }
+
+/* Numbers: right-aligned, tabular figures. Mark with class="num" or
+   data-type="number"; the exporter reads the same signal for real
+   numeric cells. */
+.num, td.num, th.num, [data-type="number"] {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* A leading row-label column reads as a header down the side. */
+table.sheet tbody td:first-child { font-weight: 600; color: var(--fg); }
+
+/* Totals / summary rows. */
+tr.total td, tr.subtotal td {
+  font-weight: 700; color: var(--fg);
+  border-top: 1.5px solid var(--grid-strong);
+  background: var(--accent-wash);
+}
+
+/* Inline value tone — gains/losses in a cell. */
+.pos, .positive { color: var(--positive); }
+.neg, .negative { color: var(--negative); }
+.muted { color: var(--fg-muted); }
+
+/* Status chips inside a cell (map to colored runs in XLSX). */
+.pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: var(--type-small); font-weight: 600;
+  padding: 2px 9px; border-radius: 999px;
+  border: 1px solid var(--grid-strong); color: var(--fg-muted);
+  white-space: nowrap;
+}
+.pill.available { color: var(--st-available); border-color: var(--st-available); background: var(--positive-tint); }
+.pill.gated     { color: var(--st-gated);     border-color: var(--st-gated);     background: #FBF2DE; }
+.pill.parked    { color: var(--st-parked); }
+.pill.negative  { color: var(--negative);     border-color: var(--negative);     background: var(--negative-tint); }
+
+/* ── print / PDF ───────────────────────────────────────────── */
+@media print {
+  body { background: var(--white); }
+  .workbook { max-width: none; padding: 0.4in 0.5in; }
+  table.sheet thead th, table thead th { position: static; }
+}
+
+@media (max-width: 760px) {
+  .workbook { padding: 16px 12px 48px; overflow-x: auto; }
+}

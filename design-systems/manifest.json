@@ -3,6 +3,7 @@
     "name": "Oneshot",
     "slug": "oneshot",
     "doc_css": "oneshot-doc.css",
+    "sheet_css": "oneshot-sheet.css",
     "description": "Clean ink-on-paper, built for lossless export."
   }
 ]

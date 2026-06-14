@@ -128,10 +128,12 @@ addColumnIfMissing("workspaces",  "agent_model",         "TEXT NOT NULL DEFAULT 
 addColumnIfMissing("workspaces",  "artifact_type",       "TEXT NOT NULL DEFAULT 'deck'");
 addColumnIfMissing("design_systems", "builtin",           "INTEGER NOT NULL DEFAULT 0");
 addColumnIfMissing("design_systems", "artifact_type",     "TEXT NOT NULL DEFAULT 'deck'");
-// A design system is one identity that can dress both mediums. `css`
-// holds the deck variant; `css_document` holds the document variant
-// (empty for deck-only systems).
+// A design system is one identity that can dress every medium. `css`
+// holds the deck variant; `css_document` the document variant;
+// `css_spreadsheet` the spreadsheet variant (empty when a system has
+// no variant for that medium — the deck CSS is the fallback).
 addColumnIfMissing("design_systems", "css_document",      "TEXT NOT NULL DEFAULT ''");
+addColumnIfMissing("design_systems", "css_spreadsheet",   "TEXT NOT NULL DEFAULT ''");
 // Authoring persona — drives the AGENT's writing voice. Default is
 // terse/technical; users can swap to executive-summary, detailed, or
 // mixed-audience via the workspace settings panel. Persona text gets
@@ -201,8 +203,9 @@ function seedBuiltinDesignSystems() {
   const path = require("node:path");
   const dsDir = path.join(import.meta.dir, "..", "design-systems");
   // Each entry is one design-system identity. `<slug>.css` is the deck
-  // variant; `doc_css` (optional) names the document-variant file.
-  let manifest: Array<{ name: string; slug: string; description: string; doc_css?: string }> = [];
+  // variant; `doc_css` / `sheet_css` (optional) name the document and
+  // spreadsheet variant files.
+  let manifest: Array<{ name: string; slug: string; description: string; doc_css?: string; sheet_css?: string }> = [];
   try {
     manifest = JSON.parse(fs.readFileSync(path.join(dsDir, "manifest.json"), "utf-8"));
   } catch {
@@ -223,10 +226,11 @@ function seedBuiltinDesignSystems() {
     try { css = fs.readFileSync(path.join(dsDir, `${b.slug}.css`), "utf-8"); }
     catch { continue; }
     const cssDoc = readFile(b.doc_css);
+    const cssSheet = readFile(b.sheet_css);
     const existing = db.query("SELECT id, css FROM design_systems WHERE slug = ?").get(b.slug) as any;
     if (!existing) {
-      db.run("INSERT INTO design_systems(name, slug, css, css_document, description, builtin, created_at, updated_at) VALUES(?, ?, ?, ?, ?, 1, ?, ?)",
-        [b.name, b.slug, css, cssDoc, b.description, now, now]);
+      db.run("INSERT INTO design_systems(name, slug, css, css_document, css_spreadsheet, description, builtin, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, 1, ?, ?)",
+        [b.name, b.slug, css, cssDoc, cssSheet, b.description, now, now]);
       continue;
     }
     // Always re-assert the builtin flag + the bundle's name/description
@@ -237,9 +241,10 @@ function seedBuiltinDesignSystems() {
       db.run("UPDATE design_systems SET css = ?, updated_at = ? WHERE slug = ?",
         [css, now, b.slug]);
     }
-    // Keep the document variant in lockstep with the bundle (it shares
+    // Keep the medium variants in lockstep with the bundle (they share
     // the system's identity, not a separate version line).
     db.run("UPDATE design_systems SET css_document = ? WHERE slug = ? AND css_document != ?", [cssDoc, b.slug, cssDoc]);
+    db.run("UPDATE design_systems SET css_spreadsheet = ? WHERE slug = ? AND css_spreadsheet != ?", [cssSheet, b.slug, cssSheet]);
   }
   migrateStandaloneDocSystem();
 }

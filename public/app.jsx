@@ -61,9 +61,18 @@ function toPascal(s) {
   return s.split("-").map((p) => p ? p[0].toUpperCase() + p.slice(1) : "").join("");
 }
 
-// Per-medium icon: documents read as a page, decks as a slide.
+// Per-medium icon: documents read as a page, spreadsheets as a grid,
+// decks as a slide.
 function artifactTypeIcon(type) {
-  return (type || "deck") === "document" ? "file-text" : "presentation";
+  if (type === "document") return "file-text";
+  if (type === "spreadsheet") return "table";
+  return "presentation";
+}
+// Short medium tag shown on an artifact row.
+function artifactTypeTag(type) {
+  if (type === "document") return "Doc";
+  if (type === "spreadsheet") return "Sheet";
+  return "Deck";
 }
 
 // Markdown renderer for chat content. Configured with breaks=true so
@@ -1266,7 +1275,7 @@ function ArtifactSelector({ ws, artifacts, activeArtifactId, onSelect, onChange,
               <div className="vmain">
                 <div className="vlabel">
                   {a.name}
-                  <span className="art-type-tag">{(a.artifact_type || "deck") === "document" ? "Doc" : "Deck"}</span>
+                  <span className="art-type-tag">{artifactTypeTag(a.artifact_type)}</span>
                   {a.gen_count > 0 && <span className="eyebrow">{a.gen_count} run{a.gen_count === 1 ? "" : "s"}</span>}
                 </div>
                 {a.latest_version && <div className="vtime">v{a.latest_version}</div>}
@@ -1326,6 +1335,7 @@ function NewArtifactModal({ onClose, onCreate }) {
             <select className="ws-settings-select" value={type} onChange={(e) => setType(e.target.value)}>
               <option value="deck">Deck</option>
               <option value="document">Document</option>
+              <option value="spreadsheet">Spreadsheet</option>
             </select>
           </label>
         </div>
@@ -1447,7 +1457,7 @@ function FilesPanel({ ws, files, notes, generations, artifacts, activeArtifactId
             <div className="dz-sub">
               {wsRunActive
                 ? <>The agent is working. The first version will appear here when it lands.</>
-                : <>An artifact is one deliverable — a deck or a document. Create one,
+                : <>An artifact is one deliverable — a deck, a document, or a spreadsheet. Create one,
                     then add a prompt and hit <strong style={{ color: "var(--wp-fg)" }}> Generate</strong>.</>}
             </div>
             {wsRunActive ? (
@@ -1575,6 +1585,10 @@ function NoteRow({ note, onDelete }) {
 
 function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted, expanded, onToggleExpanded, artifactType }) {
   const isDoc = artifactType === "document";
+  const isSheet = artifactType === "spreadsheet";
+  // "Flow" mediums (document, spreadsheet) scroll, carry no slides, and
+  // take artifact-level comments — unlike a slide deck.
+  const isFlow = isDoc || isSheet;
   const [open, setOpen] = useState(false);
   // Current slide inside the preview iframe (0-based) — the deck shell
   // broadcasts workpod-slide messages on every slide change so the
@@ -1673,7 +1687,7 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted, e
   return (
     <div ref={artifactRef} className={"artifact fade-up" + (expanded ? " expanded" : "")}>
       {previewUrl && !previewHidden && (
-        <div className={"artifact-preview" + (isDoc ? " is-doc" : "")}>
+        <div className={"artifact-preview" + (isFlow ? " is-doc" : "")}>
           {!previewLoaded && <div className="preview-loading"><Spinner style={{ width: 22, height: 22 }} /></div>}
           {/* cur.id in the src busts the iframe when a new generation
               lands on the SAME file (agents often edit deck-vN.html in
@@ -1686,7 +1700,7 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted, e
                   style={{ opacity: previewLoaded ? 1 : 0,
                            transition: 'opacity 480ms var(--um-ease-out)' }} />
           {cur.artifact_id && (
-            <QuickComment artifactId={cur.artifact_id} slideIndex={curSlide} isDoc={isDoc}
+            <QuickComment artifactId={cur.artifact_id} slideIndex={curSlide} isDoc={isFlow}
                           onAdded={() => setCommentsBump((b) => b + 1)} />
           )}
           <div className="preview-controls">
@@ -1720,7 +1734,7 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted, e
             <Icon name="chevron-down" />
           </button>
         )}
-        {cur.artifact_id && <CommentsSection artifactId={cur.artifact_id} wsSlug={wsSlug} isDoc={isDoc}
+        {cur.artifact_id && <CommentsSection artifactId={cur.artifact_id} wsSlug={wsSlug} isDoc={isFlow}
                                              refreshKey={commentsBump}
                                              onKickedOff={(genId) => { onRefresh(); onRunStarted?.(genId); }}
                                              onJumpToSlide={(idx) => {
@@ -1846,7 +1860,7 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted, e
               </button>
             </>
           )}
-          {isHtml && <ExportMenu genId={cur.id} onDone={onRefresh} isDoc={isDoc} />}
+          {isHtml && <ExportMenu genId={cur.id} onDone={onRefresh} artifactType={artifactType} />}
           {!isHtml && (
             <a className="btn btn-ghost" href={`/api/artifacts/${cur.id}`}>
               <Icon name="download" /> Download
@@ -1866,7 +1880,7 @@ function QuickComment({ artifactId, slideIndex, onAdded, isDoc }) {
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
   // Documents have no slide index — comments land at the document level.
-  const label = isDoc ? "Comment on this document" : `Comment on slide ${slideIndex + 1}`;
+  const label = isDoc ? "Comment on this artifact" : `Comment on slide ${slideIndex + 1}`;
   const submit = async (e) => {
     e?.preventDefault();
     if (!body.trim() || busy) return;
@@ -1886,7 +1900,7 @@ function QuickComment({ artifactId, slideIndex, onAdded, isDoc }) {
         <form className="qc-pop" onSubmit={submit}>
           <div className="qc-title">{label}</div>
           <textarea autoFocus rows={2} value={body}
-                    placeholder={isDoc ? "What should change in this document?" : "What should change on this slide?"}
+                    placeholder={isDoc ? "What should change in this artifact?" : "What should change on this slide?"}
                     onChange={(e) => setBody(e.target.value)}
                     onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit(e); }} />
           <div className="qc-row">
@@ -2074,7 +2088,7 @@ function CommentRow({ comment, onChange, disabled, onJump, isDoc }) {
   const [note, setNote] = useState("");
   const [draft, setDraft] = useState(comment.body);
   const where = (typeof comment.slide_index === "number" && comment.slide_index >= 0)
-    ? `Slide ${comment.slide_index + 1}` : (isDoc ? "Document" : "Deck");
+    ? `Slide ${comment.slide_index + 1}` : (isDoc ? "Artifact" : "Deck");
   const resolved = comment.status === "resolved";
   const addressed = comment.status === "addressed";
   // Editable only while still open (not folded into a run, not yet
@@ -2503,7 +2517,7 @@ function ChatMessage({ msg }) {
 
 // All export targets under one button — six peer buttons in the bar
 // read as noise; one Export menu matches every editor users know.
-function ExportMenu({ genId, onDone, isDoc }) {
+function ExportMenu({ genId, onDone, artifactType }) {
   const [open, setOpen] = useState(false);
   useEffect(() => {
     if (!open) return;
@@ -2511,6 +2525,8 @@ function ExportMenu({ genId, onDone, isDoc }) {
     window.addEventListener("click", close);
     return () => window.removeEventListener("click", close);
   }, [open]);
+  const isDoc = artifactType === "document";
+  const isSheet = artifactType === "spreadsheet";
   return (
     <div className="vsel" onClick={(e) => e.stopPropagation()}>
       <button className="btn btn-ghost" onClick={() => setOpen((o) => !o)}>
@@ -2521,6 +2537,8 @@ function ExportMenu({ genId, onDone, isDoc }) {
           <ExportButton genId={genId} kind="pdf" onDone={onDone} />
           {isDoc ? (
             <ExportButton genId={genId} kind="docx" onDone={onDone} />
+          ) : isSheet ? (
+            <ExportButton genId={genId} kind="xlsx" onDone={onDone} />
           ) : (
             <>
               <ExportButton genId={genId} kind="pptx" onDone={onDone} />
@@ -2551,6 +2569,8 @@ function ExportButton({ genId, kind, onDone }) {
                      icon: "image",       title: "Pixel-perfect PPTX — each slide is one full-bleed image. Not editable." },
     "docx":        { busy: "DOCX",        button: "Export DOCX",
                      icon: "file-edit",   title: "Editable Word document — headings, lists, tables, and callouts map to native Word constructs" },
+    "xlsx":        { busy: "XLSX",        button: "Export XLSX",
+                     icon: "table",       title: "Editable Excel workbook — each sheet becomes a worksheet, numbers stay numeric" },
   };
   const meta = labels[kind] || labels["pdf"];
   const click = async () => {
@@ -2716,11 +2736,15 @@ function DesignSystemEditor({ systemId, onBack, onChange }) {
   if (!data) return <div className="ws-main"><div className="empty">loading…</div></div>;
 
   const hasDoc = !!(data && data.css_document);
-  // A system with no document variant can only show the deck example.
-  const medium = hasDoc ? exampleMedium : "deck";
+  const hasSheet = !!(data && data.css_spreadsheet);
+  const hasVariants = hasDoc || hasSheet;
+  // Only offer a medium the system actually has a variant for.
+  const medium = (exampleMedium === "document" && !hasDoc) || (exampleMedium === "spreadsheet" && !hasSheet)
+    ? "deck" : exampleMedium;
   // Live preview URL: bust cache when CSS is dirty + after save.
   const viewParam = view === "specimen" ? "&mode=specimen"
-                  : medium === "document" ? "&example=document" : "";
+                  : medium === "document" ? "&example=document"
+                  : medium === "spreadsheet" ? "&example=spreadsheet" : "";
   const previewUrl = `/preview/__design-system-preview/${systemId}.html?v=${previewKey}${viewParam}`;
 
   return (
@@ -2749,16 +2773,24 @@ function DesignSystemEditor({ systemId, onBack, onChange }) {
               <Icon name="gallery-horizontal-end" /> Examples
             </button>
           </div>
-          {view === "example" && hasDoc && (
+          {view === "example" && hasVariants && (
             <div className="ds-view-seg ds-medium-seg" title="Which medium to preview">
               <button className={medium === "deck" ? "on" : ""}
                       onClick={() => setExampleMedium("deck")}>
                 <Icon name="presentation" /> Deck
               </button>
-              <button className={medium === "document" ? "on" : ""}
-                      onClick={() => setExampleMedium("document")}>
-                <Icon name="file-text" /> Document
-              </button>
+              {hasDoc && (
+                <button className={medium === "document" ? "on" : ""}
+                        onClick={() => setExampleMedium("document")}>
+                  <Icon name="file-text" /> Document
+                </button>
+              )}
+              {hasSheet && (
+                <button className={medium === "spreadsheet" ? "on" : ""}
+                        onClick={() => setExampleMedium("spreadsheet")}>
+                  <Icon name="table" /> Spreadsheet
+                </button>
+              )}
             </div>
           )}
           {builtin ? (

@@ -10,7 +10,7 @@
   // saved file — so on save we strip ourselves out and the document
   // stays clean. The next preview re-injects us.
   const self = document.currentScript;
-  const page = () => document.querySelector('.doc-page') || document.body;
+  const page = () => document.querySelector('.doc-page, .workbook') || document.body;
   let editMode = false;
   let dirtyNotified = false;
 

@@ -130,24 +130,69 @@ function buildSystemPrompt(ws: any, files: any[], userPrompt?: string, artifact?
   const artifactName = artifact?.name || "Untitled";
   const artifactSlug = artifact?.slug || "untitled";
   // Medium is a property of the artifact now, not the workspace — a
-  // single workspace can hold both decks and documents.
-  const isDoc = (artifact?.artifact_type || "deck") === "document";
-  const fileBase = isDoc ? "doc" : "deck";
+  // single workspace can hold decks, documents, and spreadsheets.
+  const medium = (artifact?.artifact_type || "deck");
+  const isDoc = medium === "document";
+  const isSheet = medium === "spreadsheet";
+  const fileBase = isSheet ? "sheet" : isDoc ? "doc" : "deck";
   const ds = ws.design_system_id
     ? (db.query("SELECT * FROM design_systems WHERE id = ?").get(ws.design_system_id) as any)
     : (db.query("SELECT * FROM design_systems WHERE slug = ?").get(ws.theme || "oneshot") as any);
   const dsLabel = ds?.name || "Oneshot";
-  // One system dresses both mediums; documents link the document
-  // variant (and snapshot it), decks the deck variant.
-  const dsCssUrl = ds ? `/api/design-systems/${ds.id}/css.css${isDoc ? "?type=document" : ""}` : "";
-  const dsCss = isDoc ? (ds?.css_document || ds?.css) : ds?.css;
+  // One system dresses every medium; each links (and snapshots) its own
+  // CSS variant.
+  const variantQ = isDoc ? "?type=document" : isSheet ? "?type=spreadsheet" : "";
+  const dsCssUrl = ds ? `/api/design-systems/${ds.id}/css.css${variantQ}` : "";
+  const dsCss = isSheet ? (ds?.css_spreadsheet || ds?.css) : isDoc ? (ds?.css_document || ds?.css) : ds?.css;
   const dsCssPath = join(WORKSPACE_ROOT, ws.slug, ".design-system.css");
   if (dsCss) { try { writeFileSync(dsCssPath, dsCss); } catch {} }
   const persona = ws.persona || "terse-technical";
   const personaGuidance = PERSONA_GUIDANCE[persona] || PERSONA_GUIDANCE["terse-technical"];
 
   // Medium-specific section: how to actually build the artifact.
-  const buildSection = isDoc ? `# The document
+  const buildSection = isSheet ? `# The spreadsheet
+
+Write a data-first HTML workbook — NOT slides, NOT prose. Output a
+COMPLETE HTML file. Each <table class="sheet"> becomes one editable
+worksheet in the exported XLSX, so structure the data as real tables:
+
+    <!doctype html>
+    <html><head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <link rel="stylesheet" href="${dsCssUrl}">
+    </head><body>
+    <div class="workbook">
+      <h1 class="workbook-title">Workbook title</h1>
+      <p class="workbook-sub">A one-line description.</p>
+
+      <section class="sheet-wrap">
+        <div class="sheet-name">Summary</div>
+        <table class="sheet">
+          <thead><tr><th>Category</th><th class="num">Budget</th><th class="num">Actual</th></tr></thead>
+          <tbody>
+            <tr><td>Marketing</td><td class="num">50000</td><td class="num">48200</td></tr>
+            <tr><td>Engineering</td><td class="num">120000</td><td class="num">119450</td></tr>
+            <tr class="total"><td>Total</td><td class="num">170000</td><td class="num">167650</td></tr>
+          </tbody>
+        </table>
+      </section>
+      <!-- one more <section class="sheet-wrap"> per additional worksheet -->
+    </div>
+    </body></html>
+
+Rules that keep the XLSX export clean and correct:
+- One <table class="sheet"> per worksheet; name it with <div class="sheet-name">.
+- Put column headers in <thead>; data rows in <tbody>.
+- NUMERIC cells: class="num" and the cell holds ONLY the raw number —
+  50000, not "$50,000". Units/currency go in the column header. The
+  exporter writes these as real numbers so Excel can sum them.
+- Mark total/subtotal rows with class="total" (or "subtotal").
+- A leading label column reads as a row header automatically.
+- Status chips: <span class="pill available">Open</span> etc.
+- This is data, not a layout exercise — no decorative free-form HTML,
+  just clean tables. openwright renders it live and exports to editable
+  XLSX and to PDF, so the HTML is the source of truth.` : isDoc ? `# The document
 
 Write a flowing HTML document — NOT slides. No deck shell, no
 <deck-stage>, no fixed canvas. Output a COMPLETE HTML file, and put a
@@ -210,12 +255,15 @@ currentColor).
 It uses CSS variables — DO NOT hardcode colors or font sizes. Use the
 variables so the design-system picker keeps working across themes.`;
 
+  const mediumNoun = isSheet ? "a spreadsheet" : isDoc ? "a document" : "a slide deck";
+  const mediumWord = isSheet ? "spreadsheet" : isDoc ? "document" : "deck";
+  const exportFmt = isSheet ? "XLSX" : isDoc ? "DOCX" : "PPTX";
   return `You are openwright, an agent whose only job is to turn a workspace of mixed-format
-files into ${isDoc ? "a document" : "a slide deck"}.
+files into ${mediumNoun}.
 
-You write the ${isDoc ? "document" : "deck"} as a SINGLE HTML FILE that openwright renders live in an
+You write the ${mediumWord} as a SINGLE HTML FILE that openwright renders live in an
 iframe (no build step). The same source ships to PDF (chromium print) and
-to editable ${isDoc ? "DOCX" : "PPTX"} (DOM-walking exporter) — so HTML/CSS is the source of
+to editable ${exportFmt} (DOM-walking exporter) — so HTML/CSS is the source of
 truth; what you write is what the user sees.
 
 Host OS: ${process.platform === "win32" ? "Windows — use Windows-style paths (C:\\...) and PowerShell/cmd-compatible commands" : process.platform === "darwin" ? "macOS (POSIX paths and shell)" : "Linux (POSIX paths and shell)"}
@@ -272,7 +320,7 @@ function inferVersion(name: string): number {
 
 function findLatestArtifact(dir: string): { name: string; path: string } | null {
   if (!existsSync(dir)) return null;
-  const files = readdirSync(dir).filter((f) => /^(deck|doc)-v\d+\.html$/i.test(f));
+  const files = readdirSync(dir).filter((f) => /^(deck|doc|sheet)-v\d+\.html$/i.test(f));
   if (!files.length) return null;
   files.sort((a, b) => inferVersion(b) - inferVersion(a));
   return { name: files[0]!, path: join(dir, files[0]!) };
@@ -447,9 +495,11 @@ export async function startGeneration(gen_id: number, opts: { fresh?: boolean } 
   ).get(artifact.id) as any)?.m as (number | null);
   const nextVersion = (maxByArtifact || 0) + 1;
   const artifactDirRel = `./artifacts/${artifact.slug}`;
-  const isDocArt = (artifact?.artifact_type || "deck") === "document";
-  const baseName = isDocArt ? "doc" : "deck";
-  const versionPin = `Write the ${isDocArt ? "document" : "deck"} to ${artifactDirRel}/${baseName}-v${nextVersion}.html. The HTML IS the deliverable — no separate build step. openwright renders it live in an iframe + exports to PDF / ${isDocArt ? "DOCX" : "PPTX"} from the same source. v${nextVersion} is the next available integer above all existing files in ${artifactDirRel}/.`;
+  const artType = (artifact?.artifact_type || "deck");
+  const baseName = artType === "spreadsheet" ? "sheet" : artType === "document" ? "doc" : "deck";
+  const mediumNoun = artType === "spreadsheet" ? "spreadsheet" : artType === "document" ? "document" : "deck";
+  const exportFmt = artType === "spreadsheet" ? "XLSX" : artType === "document" ? "DOCX" : "PPTX";
+  const versionPin = `Write the ${mediumNoun} to ${artifactDirRel}/${baseName}-v${nextVersion}.html. The HTML IS the deliverable — no separate build step. openwright renders it live in an iframe + exports to PDF / ${exportFmt} from the same source. v${nextVersion} is the next available integer above all existing files in ${artifactDirRel}/.`;
 
   const openComments = db.query(
     `SELECT id, slide_index, body, created_at
