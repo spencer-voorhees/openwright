@@ -21,6 +21,7 @@ unknown blocks degrade gracefully to plain paragraphs.
 from __future__ import annotations
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -55,7 +56,10 @@ DOM_WALK_JS = r"""
           if (t && t.trim() !== '' || t === ' ') out.push({ text: t, ...fmt });
         } else if (child.nodeType === 1) {     // element
           const tag = child.tagName.toLowerCase();
-          const next = { ...fmt };
+          // Carry the element's actual rendered color so a colored span
+          // (or an agent-changed heading) exports in that color rather
+          // than the default ink.
+          const next = { ...fmt, color: getComputedStyle(child).color };
           if (tag === 'strong' || tag === 'b' || hasClass(child, 'em')) next.bold = true;
           if (tag === 'em' || tag === 'i') next.italic = true;
           if (tag === 'code' || tag === 'kbd' || hasClass(child, 'mono')) next.mono = true;
@@ -65,7 +69,7 @@ DOM_WALK_JS = r"""
         }
       }
     }
-    walk(el, {});
+    walk(el, { color: getComputedStyle(el).color });
     // Collapse runs of pure-whitespace to keep Word tidy.
     return out
       .map(r => ({ ...r, text: r.text.replace(/\s+/g, ' ') }))
@@ -151,6 +155,25 @@ def hex_to_rgb(h: str) -> RGBColor:
     return RGBColor(int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
 
 
+def css_color(value):
+    """Parse a computed CSS color (rgb()/rgba()/#hex) to RGBColor, or None.
+    Fully transparent colors return None so the base color is kept."""
+    if not value:
+        return None
+    v = value.strip()
+    nums = re.findall(r"-?\d*\.?\d+", v)
+    if v.startswith("rgb") and len(nums) >= 3:
+        rr, gg, bb = (int(round(float(nums[i]))) for i in range(3))
+        alpha = float(nums[3]) if len(nums) >= 4 else 1.0
+        if alpha == 0:
+            return None
+        clamp = lambda x: max(0, min(255, x))
+        return RGBColor(clamp(rr), clamp(gg), clamp(bb))
+    if v.startswith("#"):
+        return hex_to_rgb(v)
+    return None
+
+
 def set_cell_shading(cell, hex_fill: str):
     tcPr = cell._tc.get_or_add_tcPr()
     shd = OxmlElement("w:shd")
@@ -172,7 +195,10 @@ def add_runs(paragraph, runs, accent: RGBColor, base_size: float, base_color: RG
         r = paragraph.add_run(text)
         r.font.size = Pt(base_size)
         r.font.name = MONO if seg.get("mono") else SANS
-        r.font.color.rgb = base_color
+        # The run's actual rendered color wins (so agent-changed colors
+        # survive the export); fall back to the block's base color.
+        col = css_color(seg.get("color"))
+        r.font.color.rgb = col if col is not None else base_color
         if seg.get("bold"):
             r.bold = True
         if seg.get("italic"):
@@ -180,7 +206,8 @@ def add_runs(paragraph, runs, accent: RGBColor, base_size: float, base_color: RG
         if seg.get("mono"):
             r.font.size = Pt(base_size - 1)
         if seg.get("link"):
-            r.font.color.rgb = accent
+            if col is None:
+                r.font.color.rgb = accent
             r.font.underline = True
 
 
