@@ -298,8 +298,15 @@ function App() {
         )}
         {view === "settings" && <SettingsView />}
       </div>
-      {menu && (
-        <div className="menu" style={{ left: menu.x, top: menu.y }} onClick={(e) => e.stopPropagation()}>
+      {menu && (() => {
+        // Clamp to the viewport so a tap near the right/bottom edge (the
+        // pod card's ⋯ sits top-right, hard against the edge on mobile)
+        // doesn't open the menu off-screen.
+        const MW = 200, MH = 130, pad = 8;
+        const left = Math.max(pad, Math.min(menu.x, window.innerWidth - MW - pad));
+        const top = Math.max(pad, Math.min(menu.y, window.innerHeight - MH - pad));
+        return (
+        <div className="menu" style={{ left, top }} onClick={(e) => e.stopPropagation()}>
           <button onClick={() => { openWs(menu.ws.slug); setMenu(null); }}>
             <Icon name="folder-open" /> Open
           </button>
@@ -308,7 +315,8 @@ function App() {
             <Icon name="trash-2" /> Delete workspace
           </button>
         </div>
-      )}
+        );
+      })()}
       {modal?.type === "new-ws" && (
         <NewWorkspaceModal onClose={() => setModal(null)}
           onCreated={(ws) => { setModal(null); refresh(); setFreshWs(ws.slug); openWs(ws.slug); }} />

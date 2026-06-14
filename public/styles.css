@@ -248,7 +248,7 @@ a { color: var(--wp-link); }
 .pod-new:hover { color: var(--wp-fg); border-color: var(--wp-accent-line); background: var(--wp-accent-tint); }
 .pod-new .plus { width: 46px; height: 46px; border-radius: 14px; border: 1px solid currentColor; display: grid; place-items: center; }
 
-.menu { position: absolute; z-index: 60; min-width: 184px; background: var(--wp-elev-2); border: 1px solid var(--wp-border-strong); border-radius: var(--um-r-md); padding: 6px; box-shadow: var(--um-shadow-lg); }
+.menu { position: fixed; z-index: 60; min-width: 184px; max-width: calc(100vw - 16px); background: var(--wp-elev-2); border: 1px solid var(--wp-border-strong); border-radius: var(--um-r-md); padding: 6px; box-shadow: var(--um-shadow-lg); }
 .menu button { width: 100%; display: flex; align-items: center; gap: 10px; background: none; border: none; color: var(--wp-fg-muted); font-family: var(--um-font-sans); font-size: 13px; padding: 8px 10px; border-radius: var(--um-r-sm); cursor: pointer; text-align: left; }
 .menu button:hover { background: rgba(255,255,255,0.06); color: var(--wp-fg); }
 .menu button.danger:hover { background: rgba(255,59,48,0.12); color: var(--um-negative); }
