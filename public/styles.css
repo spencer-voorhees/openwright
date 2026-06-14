@@ -1028,6 +1028,12 @@ textarea.field { resize: none; line-height: 1.5; }
   .agent-head { min-height: 54px; padding: 11px 16px; }
   .chat { padding: 18px 16px 8px; }
   .composer { padding: 12px 14px 16px; }
+  /* iOS zooms the page when a focused field is under 16px. Pin text
+     inputs to 16px on mobile so tapping in never triggers that zoom. */
+  .composer-box textarea, .field, .comment-body-input, .comment-slide-input,
+  .ws-settings-select, .set-model, .qc-pop textarea, .ds-name-input, .ds-desc-input {
+    font-size: 16px;
+  }
   .bubble-user { max-width: 92%; }
   .vhist { width: 248px; }
   .modal { width: 100%; max-width: none; border-radius: var(--um-r-xl) var(--um-r-xl) 0 0;
