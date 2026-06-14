@@ -223,7 +223,6 @@ function App() {
   const [menu, setMenu] = useState(null);            // {ws, x, y}
   const [modal, setModal] = useState(null);
   const [wsTab, setWsTab] = useState("files");      // mobile only
-  const [freshWs, setFreshWs] = useState(null);     // slug just created → auto-open first artifact
 
   const refresh = useCallback(async () => {
     const d = await fetchJson("/api/workspaces");
@@ -287,8 +286,6 @@ function App() {
         {view === "workspace" && (
           <WorkspaceView key={activeSlug} slug={activeSlug}
                           wsTab={wsTab} setWsTab={setWsTab}
-                          autoNew={freshWs === activeSlug}
-                          onAutoNewConsumed={() => setFreshWs(null)}
                           onBack={backToDashboard} onChange={refresh} />
         )}
         {view === "design-systems" && (
@@ -319,7 +316,7 @@ function App() {
       })()}
       {modal?.type === "new-ws" && (
         <NewWorkspaceModal onClose={() => setModal(null)}
-          onCreated={(ws) => { setModal(null); refresh(); setFreshWs(ws.slug); openWs(ws.slug); }} />
+          onCreated={(ws) => { setModal(null); refresh(); openWs(ws.slug); }} />
       )}
     </div>
   );
@@ -865,7 +862,7 @@ function NewWorkspaceModal({ onClose, onCreated }) {
 // WORKSPACE VIEW (3-pane)
 // ═══════════════════════════════════════════════════════════════
 
-function WorkspaceView({ slug, wsTab, setWsTab, onBack, onChange, autoNew, onAutoNewConsumed }) {
+function WorkspaceView({ slug, wsTab, setWsTab, onBack, onChange }) {
   const [data, setData] = useState(null);
   const [activeGen, setActiveGen] = useState(null);
   const [activeArtifactId, setActiveArtifactId] = useState(null);
@@ -894,13 +891,6 @@ function WorkspaceView({ slug, wsTab, setWsTab, onBack, onChange, autoNew, onAut
   }, [slug, activeGen, onChange]);
 
   useEffect(() => { refresh(); }, [slug]);
-
-  // A freshly created workspace opens the New Artifact dialog straight
-  // away so the first artifact is always named + typed, never a silent
-  // default. Consume the signal so it fires once.
-  useEffect(() => {
-    if (autoNew) { setNewArtifactOpen(true); onAutoNewConsumed?.(); }
-  }, [autoNew]);
 
   // Kick a generation against a specific artifact and follow it.
   const runGeneration = useCallback(async (artifactId, prompt, fresh = false) => {
