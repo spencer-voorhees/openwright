@@ -737,6 +737,10 @@ const CHROME_BIN = CHROME?.bin || "";
 // editable pptx shape per leaf element (text box, picture, rect).
 const HTML_PPTX_EXPORT       = join(import.meta.dir, "..", "html-engine", "exporters", "export_pptx.py");
 const HTML_PPTX_IMAGE_EXPORT = join(import.meta.dir, "..", "html-engine", "exporters", "export_pptx_image.py");
+// DOM-walking HTML → DOCX export. The document medium is block-flow
+// only, so this maps each block to an editable Word construct rather
+// than rasterizing. Output sits next to the .html as <base>.docx.
+const HTML_DOCX_EXPORT       = join(import.meta.dir, "..", "html-engine", "exporters", "export_docx.py");
 
 // Kill an active generation on user request. If the in-memory loop is
 // gone (server restarted under it), mark the row directly so the UI
@@ -782,6 +786,38 @@ async function exportPptxFromHtml(gen_id: string, mode: "dom" | "image" = "dom")
   return json({ ok: true, path: outPath, mode });
 }
 
+// HTML → DOCX. Gated to document artifacts (decks export to PPTX).
+// Walks the rendered .doc-page block flow into an editable Word file.
+async function exportDocxFromHtml(gen_id: string) {
+  const g = db.query("SELECT * FROM generations WHERE id = ?").get(gen_id) as any;
+  if (!g || !g.artifact_path) return err("no artifact", 404);
+  g.artifact_path = resolveArtifact(g.artifact_path);
+  if (!/\.html$/i.test(g.artifact_path)) return err("export-docx requires an HTML artifact", 400);
+  if (!existsSync(g.artifact_path)) return err("artifact file missing on disk", 404);
+  // DOCX only makes sense for documents — decks have no block flow.
+  const ws = db.query(
+    "SELECT w.artifact_type FROM workspaces w JOIN artifacts a ON a.workspace_id = w.id WHERE a.id = ?",
+  ).get(g.artifact_id) as any;
+  if (ws && (ws.artifact_type || "deck") !== "document") {
+    return err("export-docx is only available for document artifacts", 400);
+  }
+  if (!existsSync(HTML_DOCX_EXPORT)) return err("html-engine docx exporter not found", 500);
+  const m = String(g.artifact_path).replace(/\\/g, "/").match(/\/workspaces\/(.+)$/);
+  if (!m) return err("could not derive preview path", 500);
+  const previewUrl = `http://127.0.0.1:${PORT}/preview/${m[1]}`;
+  const outPath = g.artifact_path.replace(/\.html$/i, ".docx");
+  const proc = Bun.spawn({
+    cmd: [PYTHON_BIN, HTML_DOCX_EXPORT, "--url", previewUrl, "--out", outPath],
+    stderr: "pipe", stdout: "pipe",
+  });
+  const exitCode = await proc.exited;
+  if (exitCode !== 0 || !existsSync(outPath)) {
+    const stderr = proc.stderr ? await new Response(proc.stderr).text() : "";
+    return err(`docx export failed (exit ${exitCode}): ${stderr.slice(-500)}`, 500);
+  }
+  return json({ ok: true, path: outPath });
+}
+
 // Build a friendly download filename like
 // "dit-theme-migration-untitled-deck-v22.pptx" so saved files identify
 // which workspace and artifact they belong to. Strips the "untitled"
@@ -815,7 +851,7 @@ function exportFilename(artifact_path: string, kind: string): string {
 
 // Serve an exported PDF/PPTX sibling of the gen's html artifact —
 // `<base>.pdf` / `<base>.pptx` next to the .html file.
-async function downloadExport(gen_id: string, kind: "pdf" | "pptx" | "pptx-image") {
+async function downloadExport(gen_id: string, kind: "pdf" | "pptx" | "pptx-image" | "docx") {
   const g = db.query("SELECT * FROM generations WHERE id = ?").get(gen_id) as any;
   if (!g || !g.artifact_path) return err("no artifact", 404);
   g.artifact_path = resolveArtifact(g.artifact_path);
@@ -825,6 +861,8 @@ async function downloadExport(gen_id: string, kind: "pdf" | "pptx" | "pptx-image
   const friendly = exportFilename(out, kind);
   const mime = kind === "pdf"
     ? "application/pdf"
+    : kind === "docx"
+    ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     : "application/vnd.openxmlformats-officedocument.presentationml.presentation";
   return new Response(Bun.file(out), {
     headers: {
@@ -1019,9 +1057,11 @@ function route(req: Request, url: URL): Promise<Response> | Response {
   if ((mt = m("/api/generations/(\\d+)/stop")) && req.method === "POST") return stopGen(mt[1]);
   if ((mt = m("/api/generations/(\\d+)/export-pptx")) && req.method === "POST") return exportPptxFromHtml(mt[1], "dom");
   if ((mt = m("/api/generations/(\\d+)/export-pptx-image")) && req.method === "POST") return exportPptxFromHtml(mt[1], "image");
+  if ((mt = m("/api/generations/(\\d+)/export-docx")) && req.method === "POST") return exportDocxFromHtml(mt[1]);
   if ((mt = m("/api/generations/(\\d+)/download-pdf")) && req.method === "GET") return downloadExport(mt[1], "pdf");
   if ((mt = m("/api/generations/(\\d+)/download-pptx")) && req.method === "GET") return downloadExport(mt[1], "pptx");
   if ((mt = m("/api/generations/(\\d+)/download-pptx-image")) && req.method === "GET") return downloadExport(mt[1], "pptx-image");
+  if ((mt = m("/api/generations/(\\d+)/download-docx")) && req.method === "GET") return downloadExport(mt[1], "docx");
   if ((mt = m("/api/artifacts/(\\d+)")) && req.method === "GET") return downloadArtifact(mt[1]);
   if ((mt = m("/api/files/(\\d+)")) && req.method === "GET") return downloadFile(mt[1]);
   if (path === "/api/design-systems" && req.method === "GET")  return listDesignSystems();

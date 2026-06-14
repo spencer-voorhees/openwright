@@ -1715,7 +1715,7 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted, e
               </button>
             </>
           )}
-          {isHtml && <ExportMenu genId={cur.id} onDone={onRefresh} />}
+          {isHtml && <ExportMenu genId={cur.id} onDone={onRefresh} isDoc={isDoc} />}
           {!isHtml && (
             <a className="btn btn-ghost" href={`/api/artifacts/${cur.id}`}>
               <Icon name="download" /> Download
@@ -2372,7 +2372,7 @@ function ChatMessage({ msg }) {
 
 // All export targets under one button — six peer buttons in the bar
 // read as noise; one Export menu matches every editor users know.
-function ExportMenu({ genId, onDone }) {
+function ExportMenu({ genId, onDone, isDoc }) {
   const [open, setOpen] = useState(false);
   useEffect(() => {
     if (!open) return;
@@ -2388,8 +2388,14 @@ function ExportMenu({ genId, onDone }) {
       {open && (
         <div className="vhist export-menu">
           <ExportButton genId={genId} kind="pdf" onDone={onDone} />
-          <ExportButton genId={genId} kind="pptx" onDone={onDone} />
-          <ExportButton genId={genId} kind="pptx-image" onDone={onDone} />
+          {isDoc ? (
+            <ExportButton genId={genId} kind="docx" onDone={onDone} />
+          ) : (
+            <>
+              <ExportButton genId={genId} kind="pptx" onDone={onDone} />
+              <ExportButton genId={genId} kind="pptx-image" onDone={onDone} />
+            </>
+          )}
           <a className="btn btn-ghost" href={`/api/artifacts/${genId}`}>
             <Icon name="download" /> HTML source
           </a>
@@ -2407,11 +2413,13 @@ function ExportButton({ genId, kind, onDone }) {
   // distinction explicit so the user knows what they're getting.
   const labels = {
     "pdf":         { busy: "PDF",         button: "Export PDF",
-                     icon: "file-text",   title: "Render the deck to PDF via chrome headless" },
+                     icon: "file-text",   title: "Render to PDF via chrome headless" },
     "pptx":        { busy: "PPTX",        button: "Export PPTX",
                      icon: "file-edit",   title: "Editable PPTX — each visual is a real shape" },
     "pptx-image":  { busy: "image PPTX",  button: "Export PPTX (image)",
                      icon: "image",       title: "Pixel-perfect PPTX — each slide is one full-bleed image. Not editable." },
+    "docx":        { busy: "DOCX",        button: "Export DOCX",
+                     icon: "file-edit",   title: "Editable Word document — headings, lists, tables, and callouts map to native Word constructs" },
   };
   const meta = labels[kind] || labels["pdf"];
   const click = async () => {
