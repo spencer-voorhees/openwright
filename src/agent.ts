@@ -129,17 +129,20 @@ function buildSystemPrompt(ws: any, files: any[], userPrompt?: string, artifact?
   ).join("\n");
   const artifactName = artifact?.name || "Untitled";
   const artifactSlug = artifact?.slug || "untitled";
+  const isDoc = (ws.artifact_type || "deck") === "document";
+  const fileBase = isDoc ? "doc" : "deck";
   const ds = ws.design_system_id
     ? (db.query("SELECT * FROM design_systems WHERE id = ?").get(ws.design_system_id) as any)
     : (db.query("SELECT * FROM design_systems WHERE slug = ?").get(ws.theme || "oneshot") as any);
   const dsLabel = ds?.name || "Oneshot";
-  const dsCssUrl = ds ? `/api/design-systems/${ds.id}/css.css` : "";
+  // One system dresses both mediums; documents link the document
+  // variant (and snapshot it), decks the deck variant.
+  const dsCssUrl = ds ? `/api/design-systems/${ds.id}/css.css${isDoc ? "?type=document" : ""}` : "";
+  const dsCss = isDoc ? (ds?.css_document || ds?.css) : ds?.css;
   const dsCssPath = join(WORKSPACE_ROOT, ws.slug, ".design-system.css");
-  if (ds?.css) { try { writeFileSync(dsCssPath, ds.css); } catch {} }
+  if (dsCss) { try { writeFileSync(dsCssPath, dsCss); } catch {} }
   const persona = ws.persona || "terse-technical";
   const personaGuidance = PERSONA_GUIDANCE[persona] || PERSONA_GUIDANCE["terse-technical"];
-  const isDoc = (ws.artifact_type || "deck") === "document";
-  const fileBase = isDoc ? "doc" : "deck";
 
   // Medium-specific section: how to actually build the artifact.
   const buildSection = isDoc ? `# The document

@@ -122,6 +122,10 @@ addColumnIfMissing("workspaces",  "agent_model",         "TEXT NOT NULL DEFAULT 
 addColumnIfMissing("workspaces",  "artifact_type",       "TEXT NOT NULL DEFAULT 'deck'");
 addColumnIfMissing("design_systems", "builtin",           "INTEGER NOT NULL DEFAULT 0");
 addColumnIfMissing("design_systems", "artifact_type",     "TEXT NOT NULL DEFAULT 'deck'");
+// A design system is one identity that can dress both mediums. `css`
+// holds the deck variant; `css_document` holds the document variant
+// (empty for deck-only systems).
+addColumnIfMissing("design_systems", "css_document",      "TEXT NOT NULL DEFAULT ''");
 // Authoring persona — drives the AGENT's writing voice. Default is
 // terse/technical; users can swap to executive-summary, detailed, or
 // mixed-audience via the workspace settings panel. Persona text gets
@@ -183,7 +187,9 @@ function seedBuiltinDesignSystems() {
   const fs = require("node:fs");
   const path = require("node:path");
   const dsDir = path.join(import.meta.dir, "..", "design-systems");
-  let manifest: Array<{ name: string; slug: string; description: string; artifact_type?: string }> = [];
+  // Each entry is one design-system identity. `<slug>.css` is the deck
+  // variant; `doc_css` (optional) names the document-variant file.
+  let manifest: Array<{ name: string; slug: string; description: string; doc_css?: string }> = [];
   try {
     manifest = JSON.parse(fs.readFileSync(path.join(dsDir, "manifest.json"), "utf-8"));
   } catch {
@@ -195,24 +201,52 @@ function seedBuiltinDesignSystems() {
     const m = css.match(/^\/\*\s*v(\d+)\b/);
     return m ? parseInt(m[1]!, 10) : 0;
   };
+  const readFile = (name?: string): string => {
+    if (!name) return "";
+    try { return fs.readFileSync(path.join(dsDir, name), "utf-8"); } catch { return ""; }
+  };
   for (const b of manifest) {
     let css = "";
     try { css = fs.readFileSync(path.join(dsDir, `${b.slug}.css`), "utf-8"); }
     catch { continue; }
+    const cssDoc = readFile(b.doc_css);
     const existing = db.query("SELECT id, css FROM design_systems WHERE slug = ?").get(b.slug) as any;
     if (!existing) {
-      db.run("INSERT INTO design_systems(name, slug, css, description, builtin, artifact_type, created_at, updated_at) VALUES(?, ?, ?, ?, 1, ?, ?, ?)",
-        [b.name, b.slug, css, b.description, b.artifact_type || "deck", now, now]);
+      db.run("INSERT INTO design_systems(name, slug, css, css_document, description, builtin, created_at, updated_at) VALUES(?, ?, ?, ?, ?, 1, ?, ?)",
+        [b.name, b.slug, css, cssDoc, b.description, now, now]);
       continue;
     }
-    // Always re-assert the builtin flag (cheap, idempotent) so existing
-    // rows from before this column existed get marked read-only.
-    db.run("UPDATE design_systems SET builtin = 1, artifact_type = ? WHERE slug = ?", [b.artifact_type || "deck", b.slug]);
+    // Always re-assert the builtin flag + the bundle's name/description
+    // (builtins are immutable in-app, so the bundle is the source of
+    // truth — cheap, idempotent).
+    db.run("UPDATE design_systems SET builtin = 1, name = ?, description = ? WHERE slug = ?", [b.name, b.description, b.slug]);
     if (bundledVersion(css) > bundledVersion(existing.css || "")) {
-      db.run("UPDATE design_systems SET name = ?, css = ?, description = ?, builtin = 1, updated_at = ? WHERE slug = ?",
-        [b.name, css, b.description, now, b.slug]);
+      db.run("UPDATE design_systems SET css = ?, updated_at = ? WHERE slug = ?",
+        [css, now, b.slug]);
     }
+    // Keep the document variant in lockstep with the bundle (it shares
+    // the system's identity, not a separate version line).
+    db.run("UPDATE design_systems SET css_document = ? WHERE slug = ? AND css_document != ?", [cssDoc, b.slug, cssDoc]);
   }
+  migrateStandaloneDocSystem();
+}
+
+// Earlier builds shipped the document baseline as its OWN design system
+// ("oneshot-doc"). The model is now one Oneshot that dresses both
+// mediums, so fold any standalone doc system back into its deck sibling:
+// move its CSS into the sibling's css_document, repoint workspaces, drop
+// the orphan row. Idempotent — a no-op once the orphan is gone.
+function migrateStandaloneDocSystem() {
+  const orphan = db.query("SELECT id, css FROM design_systems WHERE slug = 'oneshot-doc'").get() as any;
+  if (!orphan) return;
+  const parent = db.query("SELECT id, css_document FROM design_systems WHERE slug = 'oneshot'").get() as any;
+  if (!parent) return;
+  if (!parent.css_document && orphan.css) {
+    db.run("UPDATE design_systems SET css_document = ? WHERE id = ?", [orphan.css, parent.id]);
+  }
+  db.run("UPDATE workspaces SET design_system_id = ?, theme = 'oneshot' WHERE design_system_id = ?", [parent.id, orphan.id]);
+  db.run("DELETE FROM design_systems WHERE id = ?", [orphan.id]);
+  console.log("[db] merged standalone oneshot-doc system into Oneshot");
 }
 seedBuiltinDesignSystems();
 

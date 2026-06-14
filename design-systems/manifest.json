@@ -2,13 +2,7 @@
   {
     "name": "Oneshot",
     "slug": "oneshot",
-    "artifact_type": "deck",
-    "description": "Export-lossless baseline. Clean ink-on-paper slides that survive the editable PPTX export one for one."
-  },
-  {
-    "name": "Oneshot Document",
-    "slug": "oneshot-doc",
-    "artifact_type": "document",
-    "description": "Export-lossless document baseline. Flowing typography that survives the DOCX export one for one."
+    "doc_css": "oneshot-doc.css",
+    "description": "Export-lossless baseline. Clean ink-on-paper that survives the editable PPTX and DOCX exports one for one — slides or document."
   }
 ]

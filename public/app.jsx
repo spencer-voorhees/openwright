@@ -1153,15 +1153,13 @@ function InlineDesignSystemSelect({ ws, onChange }) {
       .then((d) => setSystems(d.design_systems || []))
       .catch(() => setSystems([]));
   }, []);
-  // Only show systems that match the workspace's artifact type — a doc
-  // workspace must not pick a deck theme (the CSS targets a different
-  // medium) and vice versa.
-  const wsType = ws.artifact_type || "deck";
-  const matching = systems.filter((s) => (s.artifact_type || "deck") === wsType);
+  // A design system dresses both mediums now, so every system is
+  // selectable regardless of the workspace's artifact type — the
+  // variant is chosen at render time.
   let currentId = ws.design_system_id;
-  if (!currentId && matching.length) {
-    const bySlug = matching.find((s) => s.slug === (ws.theme || "oneshot"));
-    currentId = (bySlug || matching[0]).id;
+  if (!currentId && systems.length) {
+    const bySlug = systems.find((s) => s.slug === (ws.theme || "oneshot"));
+    currentId = (bySlug || systems[0]).id;
   }
   return (
     <select className="ws-settings-select" value={currentId || ""}
@@ -1169,7 +1167,7 @@ function InlineDesignSystemSelect({ ws, onChange }) {
               await patchJson(`/api/workspaces/${ws.slug}`, { design_system_id: Number(e.target.value) });
               onChange();
             }}>
-      {matching.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+      {systems.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
     </select>
   );
 }
@@ -2542,9 +2540,10 @@ function DesignSystemEditor({ systemId, onBack, onChange }) {
   const [saving, setSaving] = useState(false);
   const [previewKey, setPreviewKey] = useState(0);
   const [editing, setEditing] = useState(false);   // false = preview only (default)
-  // What the preview pane shows: the token spec sheet (default) or a
-  // worked example. Pure display — no effect on the system itself.
-  const [view, setView] = useState("specimen");
+  // What the preview pane shows: the token spec sheet (default), or a
+  // worked example in either medium. Pure display — no effect on the
+  // system itself.
+  const [view, setView] = useState("specimen");   // "specimen" | "deck" | "document"
 
   const load = useCallback(async () => {
     const d = await fetchJson(`/api/design-systems/${systemId}`);
@@ -2581,8 +2580,11 @@ function DesignSystemEditor({ systemId, onBack, onChange }) {
 
   if (!data) return <div className="ws-main"><div className="empty">loading…</div></div>;
 
+  const hasDoc = !!(data && data.css_document);
   // Live preview URL: bust cache when CSS is dirty + after save.
-  const previewUrl = `/preview/__design-system-preview/${systemId}.html?v=${previewKey}${view === "specimen" ? "&mode=specimen" : ""}`;
+  const viewParam = view === "specimen" ? "&mode=specimen"
+                  : view === "document" ? "&example=document" : "";
+  const previewUrl = `/preview/__design-system-preview/${systemId}.html?v=${previewKey}${viewParam}`;
 
   return (
     <div className="ds-editor">
@@ -2604,11 +2606,18 @@ function DesignSystemEditor({ systemId, onBack, onChange }) {
                     title="Tokens, type scale, and components from this system's CSS">
               <Icon name="layout-list" /> Specimen
             </button>
-            <button className={view === "example" ? "on" : ""}
-                    onClick={() => setView("example")}
+            <button className={view === "deck" ? "on" : ""}
+                    onClick={() => setView("deck")}
                     title="A worked example deck rendered in this system">
-              <Icon name="presentation" /> Example
+              <Icon name="presentation" /> Deck
             </button>
+            {hasDoc && (
+              <button className={view === "document" ? "on" : ""}
+                      onClick={() => setView("document")}
+                      title="A worked example document rendered in this system">
+                <Icon name="file-text" /> Document
+              </button>
+            )}
           </div>
           {builtin ? (
             <span className="ds-readonly" title="Built-in baseline — immutable in the app">

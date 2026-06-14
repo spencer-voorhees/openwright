@@ -171,7 +171,8 @@ const KNOWN_ARTIFACT_TYPES = new Set(["deck", "document"]);
 
 async function listDesignSystems() {
   const rows = db.query(
-    `SELECT id, name, slug, description, builtin, artifact_type, length(css) as css_size, created_at, updated_at
+    `SELECT id, name, slug, description, builtin, length(css) as css_size,
+            (length(css_document) > 0) as has_document, created_at, updated_at
      FROM design_systems ORDER BY id ASC`).all();
   return json({ design_systems: rows });
 }
@@ -245,10 +246,14 @@ async function deleteDesignSystem(id: string) {
 // it directly. Path: /api/design-systems/:id/css.css (Spencer reads
 // the resource as a stylesheet — Bun infers the content type from the
 // .css suffix on the URL, but we set it explicitly for safety).
-async function designSystemCss(id: string) {
-  const row = db.query("SELECT css FROM design_systems WHERE id = ?").get(id) as any;
+async function designSystemCss(id: string, variant: "deck" | "document" = "deck") {
+  const row = db.query("SELECT css, css_document FROM design_systems WHERE id = ?").get(id) as any;
   if (!row) return new Response("/* design system not found */", { status: 404, headers: { "content-type": "text/css" } });
-  return new Response(row.css || "", {
+  // Documents pull the document variant; if a system has no document
+  // variant (deck-only custom systems) fall back to the deck CSS so it
+  // still renders rather than coming up blank.
+  const css = variant === "document" ? (row.css_document || row.css || "") : (row.css || "");
+  return new Response(css, {
     headers: { "content-type": "text/css; charset=utf-8", "cache-control": "no-cache" },
   });
 }
@@ -261,11 +266,10 @@ async function createWorkspace(req: Request) {
   const now = Date.now();
   const eng = engine && KNOWN_ENGINES.has(engine) ? engine : "html";
   const artType = artifact_type && KNOWN_ARTIFACT_TYPES.has(artifact_type) ? artifact_type : "deck";
-  // Default design system depends on the artifact type: decks get
-  // Oneshot, documents get Oneshot Document — both export-lossless for
-  // their medium.
-  const defaultTheme = artType === "document" ? "oneshot-doc" : "oneshot";
-  const th = theme && KNOWN_THEMES.has(theme) ? theme : defaultTheme;
+  // A design system now dresses BOTH mediums, so the artifact type no
+  // longer picks a different system — the workspace's artifact_type
+  // selects the variant at render time. Theme defaults to oneshot.
+  const th = theme && KNOWN_THEMES.has(theme) ? theme : "oneshot";
   // Resolve the design system. If the client passed an id, use it.
   // Otherwise fall back to the system whose slug matches `theme`, then
   // to whatever the first seeded system is. This keeps html mode (which
@@ -280,8 +284,8 @@ async function createWorkspace(req: Request) {
     if (bySlug) dsId = bySlug.id;
   }
   if (!dsId) {
-    const firstOfType = db.query("SELECT id FROM design_systems WHERE artifact_type = ? ORDER BY id ASC LIMIT 1").get(artType) as any;
-    if (firstOfType) dsId = firstOfType.id;
+    const first = db.query("SELECT id FROM design_systems ORDER BY id ASC LIMIT 1").get() as any;
+    if (first) dsId = first.id;
   }
   const settingEng = getSetting("default_agent_engine", DEFAULT_ENGINE);
   const fallbackEng = ADAPTERS.some((a) => a.id === settingEng) ? settingEng : DEFAULT_ENGINE;
@@ -1069,7 +1073,7 @@ function route(req: Request, url: URL): Promise<Response> | Response {
   if ((mt = m("/api/design-systems/(\\d+)")) && req.method === "GET")    return getDesignSystem(mt[1]);
   if ((mt = m("/api/design-systems/(\\d+)")) && req.method === "PATCH")  return updateDesignSystem(mt[1], req);
   if ((mt = m("/api/design-systems/(\\d+)")) && req.method === "DELETE") return deleteDesignSystem(mt[1]);
-  if ((mt = m("/api/design-systems/(\\d+)/css\\.css")) && req.method === "GET") return designSystemCss(mt[1]);
+  if ((mt = m("/api/design-systems/(\\d+)/css\\.css")) && req.method === "GET") return designSystemCss(mt[1], url.searchParams.get("type") === "document" ? "document" : "deck");
 
   return err("not found", 404);
 }
@@ -1120,13 +1124,19 @@ Bun.serve({
     const dsPreview = url.pathname.match(/^\/preview\/__design-system-preview\/(\d+)\.html$/);
     if (dsPreview) {
       const id = dsPreview[1];
-      // showcase.html is a richer regression suite — typography hierarchy,
-      // color swatches, every slide pattern, component examples — so the
-      // editor preview surfaces what the system actually covers, not
-      // just a 3-slide sample.
-      // mode=specimen → the token spec sheet; otherwise the example deck.
+      // One system, three ways to view it:
+      //   mode=specimen        → the token spec sheet (showcase.html)
+      //   example=document     → a worked document, doc variant CSS
+      //   default (deck)       → a worked deck, deck variant CSS
+      // showcase.html is a richer regression suite — typography
+      // hierarchy, color swatches, every pattern, component examples —
+      // so the specimen surfaces what the system actually covers.
       const mode = url.searchParams.get("mode");
-      const file = mode === "specimen" ? "showcase.html" : "sample.html";
+      const example = url.searchParams.get("example");
+      let file = "sample.html";
+      let cssVariant = "";
+      if (mode === "specimen") file = "showcase.html";
+      else if (example === "document") { file = "sample-doc.html"; cssVariant = "?type=document"; }
       const sourcePath = join(import.meta.dir, "..", "html-engine", "examples", file);
       if (!existsSync(sourcePath)) {
         return new Response(`${file} not found`, { status: 404 });
@@ -1135,7 +1145,7 @@ Bun.serve({
       // Swap the static themes/<x>.css link for the live design system CSS.
       const patched = sample.replace(
         /<link\s+rel="stylesheet"\s+href="\/html-engine\/themes\/[^"]+"\s*\/?>/i,
-        `<link rel="stylesheet" href="/api/design-systems/${id}/css.css">`,
+        `<link rel="stylesheet" href="/api/design-systems/${id}/css.css${cssVariant}">`,
       );
       return new Response(patched, {
         headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" },
@@ -1158,12 +1168,14 @@ Bun.serve({
       // and downstream exports (PDF / PPTX both render via this URL).
       if (rel.endsWith(".html")) {
         const wsSlug = rel.split("/")[0];
-        const ws = db.query("SELECT design_system_id FROM workspaces WHERE slug = ?").get(wsSlug) as any;
+        const ws = db.query("SELECT design_system_id, artifact_type FROM workspaces WHERE slug = ?").get(wsSlug) as any;
         if (ws && ws.design_system_id) {
+          // Documents pull the system's document variant; decks the deck.
+          const variant = (ws.artifact_type || "deck") === "document" ? "?type=document" : "";
           const html = readFileSync(t, "utf-8");
           const patched = html.replace(
-            /<link\s+rel="stylesheet"\s+href="\/api\/design-systems\/\d+\/css\.css"\s*\/?>/i,
-            `<link rel="stylesheet" href="/api/design-systems/${ws.design_system_id}/css.css">`,
+            /<link\s+rel="stylesheet"\s+href="\/api\/design-systems\/\d+\/css\.css(?:\?[^"]*)?"\s*\/?>/i,
+            `<link rel="stylesheet" href="/api/design-systems/${ws.design_system_id}/css.css${variant}">`,
           );
           return new Response(patched, {
             headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" },
