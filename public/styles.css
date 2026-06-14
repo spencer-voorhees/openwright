@@ -627,7 +627,7 @@ a { color: var(--wp-link); }
 .chat-empty { margin: auto 0; text-align: center; color: var(--wp-fg-faint); display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 40px 24px; font-size: 13.5px; line-height: 1.5; max-width: 34ch; align-self: center; }
 
 /* modal */
-.scrim { position: fixed; inset: 0; background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); z-index: 100; display: grid; place-items: center; animation: wp-fade-up var(--um-dur-base) var(--um-ease-out); }
+.scrim { position: fixed; left: 0; top: var(--vv-top, 0px); width: 100%; height: var(--vv-height, 100dvh); background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); z-index: 100; display: grid; place-items: center; animation: wp-fade-up var(--um-dur-base) var(--um-ease-out); }
 .modal { width: 440px; max-width: 92vw; background: var(--wp-elev); border: 1px solid var(--wp-border-strong); border-radius: var(--um-r-xl); padding: 24px; box-shadow: var(--um-shadow-xl); }
 .modal h3 { margin: 0 0 6px; font-size: var(--um-text-xl); font-weight: 700; letter-spacing: -.01em; }
 .modal p { margin: 0 0 18px; color: var(--wp-fg-muted); font-size: 13.5px; line-height: 1.5; }
@@ -975,7 +975,7 @@ textarea.field { resize: none; line-height: 1.5; }
 /* ============================================================  RESPONSIVE  */
 @media (max-width: 820px) {
   body { overflow: auto; }
-  .wp-app { flex-direction: column; height: 100vh; }
+  .wp-app { flex-direction: column; height: 100vh; height: 100dvh; }
   .rail { width: 100%; flex: 0 0 54px; height: 54px; flex-direction: row; align-items: center; border-right: none; border-bottom: 1px solid var(--wp-border); padding: 0 12px; gap: 9px; }
   .rail-logo { width: 34px; height: 34px; border-radius: 9px; }
   .rail-logo img { width: 34px; height: 34px; }
@@ -1030,7 +1030,8 @@ textarea.field { resize: none; line-height: 1.5; }
   .composer { padding: 12px 14px 16px; }
   .bubble-user { max-width: 92%; }
   .vhist { width: 248px; }
-  .modal { width: 100%; max-width: none; border-radius: var(--um-r-xl) var(--um-r-xl) 0 0; }
+  .modal { width: 100%; max-width: none; border-radius: var(--um-r-xl) var(--um-r-xl) 0 0;
+           max-height: 100%; overflow-y: auto; }
   .scrim { align-items: flex-end; }
 }
 

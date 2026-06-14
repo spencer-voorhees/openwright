@@ -235,6 +235,23 @@ function App() {
       .catch(() => {});
     fetchJson("/api/agents").catch(() => {});   // warm the probe cache
   }, []);
+  // Track the visual viewport so overlays (modals) stay above the
+  // on-screen keyboard on mobile — the keyboard shrinks the visual
+  // viewport but not the layout viewport, so a bottom-anchored sheet
+  // would otherwise sit behind it. Publish the visible box as CSS vars.
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const root = document.documentElement;
+    const apply = () => {
+      root.style.setProperty("--vv-height", vv.height + "px");
+      root.style.setProperty("--vv-top", (vv.offsetTop || 0) + "px");
+    };
+    apply();
+    vv.addEventListener("resize", apply);
+    vv.addEventListener("scroll", apply);
+    return () => { vv.removeEventListener("resize", apply); vv.removeEventListener("scroll", apply); };
+  }, []);
 
   const openWs = useCallback((slug) => {
     setActiveSlug(slug);
