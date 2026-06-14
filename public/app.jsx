@@ -2534,7 +2534,7 @@ function DesignSystemEditor({ systemId, onBack, onChange }) {
         <button className="icon-btn" onClick={onBack} title="Back">
           <Icon name="arrow-left" />
         </button>
-        <div style={{ flex: 1 }}>
+        <div className="ds-title-block">
           <input className="ds-name-input" value={name}
                  onChange={(e) => { setName(e.target.value); setDirty(true); }} />
           <input className="ds-desc-input" placeholder="One-line description"
