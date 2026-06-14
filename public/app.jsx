@@ -799,7 +799,6 @@ function PodCard({ ws, onOpen, onMenu }) {
 function NewWorkspaceModal({ onClose, onCreated }) {
   const [name, setName] = useState("");
   const [engine, setEngine] = useState("");
-  const [artifactType, setArtifactType] = useState("deck");
   const [agents, setAgents] = useState([]);
   const [busy, setBusy] = useState(false);
   const inputRef = useRef(null);
@@ -814,7 +813,7 @@ function NewWorkspaceModal({ onClose, onCreated }) {
     if (!name.trim() || busy) return;
     setBusy(true);
     try {
-      const d = await postJson("/api/workspaces", { name: name.trim(), agent_engine: engine || undefined, artifact_type: artifactType });
+      const d = await postJson("/api/workspaces", { name: name.trim(), agent_engine: engine || undefined });
       onCreated(d.workspace);
     } catch (e) { alert("create failed: " + e.message); }
     finally { setBusy(false); }
@@ -827,16 +826,6 @@ function NewWorkspaceModal({ onClose, onCreated }) {
         <input ref={inputRef} className="field" placeholder="e.g. Q3 board review"
                value={name} onChange={(e) => setName(e.target.value)} />
         <div className="ws-options">
-          <label className="opt">
-            <span>
-              <span className="opt-label">Type</span>
-              <span className="opt-sub">What the agent builds. Deck = slides (PPTX); Document = a flowing doc (DOCX).</span>
-            </span>
-            <select className="ws-settings-select" value={artifactType} onChange={(e) => setArtifactType(e.target.value)}>
-              <option value="deck">Deck</option>
-              <option value="document">Document</option>
-            </select>
-          </label>
           <label className="opt">
             <span>
               <span className="opt-label">Agent</span>
@@ -1021,25 +1010,6 @@ function WorkspaceSettingsButton({ ws, onChange, runActive }) {
       </button>
       {open && (
         <div className="ws-settings-pop">
-          <div className="ws-settings-row">
-            <div className="ws-settings-label">
-              <Icon name="layers" />
-              <span>Type</span>
-            </div>
-            <div className="ws-settings-control" style={{ flexDirection: "column", alignItems: "stretch", gap: 4 }}>
-              <select className="ws-settings-select" value={ws.artifact_type || "deck"}
-                      onChange={async (e) => {
-                        await patchJson(`/api/workspaces/${ws.slug}`, { artifact_type: e.target.value });
-                        onChange();
-                      }}>
-                <option value="deck">Deck</option>
-                <option value="document">Document</option>
-              </select>
-              <span style={{ fontSize: 10.5, color: "var(--wp-fg-faint)", lineHeight: 1.4 }}>
-                Changing type affects the NEXT generation; existing artifacts stay as built.
-              </span>
-            </div>
-          </div>
           <InlineAgentSelect ws={ws} onChange={onChange} runActive={runActive} />
           <div className="ws-settings-row">
             <div className="ws-settings-label">
@@ -1174,6 +1144,7 @@ function InlineDesignSystemSelect({ ws, onChange }) {
 
 function ArtifactSelector({ ws, artifacts, activeArtifactId, onSelect, onChange }) {
   const [open, setOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
   useEffect(() => {
     if (!open) return;
     const close = () => setOpen(false);
@@ -1181,15 +1152,12 @@ function ArtifactSelector({ ws, artifacts, activeArtifactId, onSelect, onChange 
     return () => window.removeEventListener("click", close);
   }, [open]);
   const active = artifacts.find((a) => a.id === activeArtifactId);
-  const create = async () => {
-    setOpen(false);
-    const name = prompt("New artifact name (e.g., 'RFP Response', 'Budget Overview'):");
-    if (!name || !name.trim()) return;
-    try {
-      const d = await postJson(`/api/workspaces/${ws.slug}/artifacts`, { name: name.trim() });
-      onSelect?.(d.artifact.id);
-      await onChange?.();
-    } catch (e) { alert("create failed: " + e.message); }
+  const create = () => { setOpen(false); setCreating(true); };
+  const doCreate = async ({ name, artifact_type }) => {
+    const d = await postJson(`/api/workspaces/${ws.slug}/artifacts`, { name, artifact_type });
+    setCreating(false);
+    onSelect?.(d.artifact.id);
+    await onChange?.();
   };
   const rename = async () => {
     setOpen(false);
@@ -1228,6 +1196,7 @@ function ArtifactSelector({ ws, artifacts, activeArtifactId, onSelect, onChange 
               <div className="vmain">
                 <div className="vlabel">
                   {a.name}
+                  <span className="art-type-tag">{(a.artifact_type || "deck") === "document" ? "Doc" : "Deck"}</span>
                   {a.gen_count > 0 && <span className="eyebrow">{a.gen_count} run{a.gen_count === 1 ? "" : "s"}</span>}
                 </div>
                 {a.latest_version && <div className="vtime">v{a.latest_version}</div>}
@@ -1252,7 +1221,54 @@ function ArtifactSelector({ ws, artifacts, activeArtifactId, onSelect, onChange 
           )}
         </div>
       )}
+      {creating && <NewArtifactModal onClose={() => setCreating(false)} onCreate={doCreate} />}
     </span>
+  );
+}
+
+// Name + medium picker for a new artifact. Medium is the artifact's own
+// property now (a workspace can hold both decks and documents), so it's
+// chosen here at creation time rather than once per workspace.
+function NewArtifactModal({ onClose, onCreate }) {
+  const [name, setName] = useState("");
+  const [type, setType] = useState("deck");
+  const [busy, setBusy] = useState(false);
+  const inputRef = useRef(null);
+  useEffect(() => { inputRef.current?.focus(); }, []);
+  const submit = async (e) => {
+    e?.preventDefault();
+    if (!name.trim() || busy) return;
+    setBusy(true);
+    try { await onCreate({ name: name.trim(), artifact_type: type }); }
+    catch (e2) { alert("create failed: " + e2.message); setBusy(false); }
+  };
+  return (
+    <div className="scrim" onClick={onClose}>
+      <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
+        <h3>New artifact</h3>
+        <p>Give it a name and pick what it is. The agent builds and versions this artifact on its own.</p>
+        <input ref={inputRef} className="field" placeholder="e.g. Q3 Board Review"
+               value={name} onChange={(e) => setName(e.target.value)} />
+        <div className="ws-options">
+          <label className="opt">
+            <span>
+              <span className="opt-label">Type</span>
+              <span className="opt-sub">Deck = slides, exports to PPTX. Document = a flowing doc, exports to DOCX.</span>
+            </span>
+            <select className="ws-settings-select" value={type} onChange={(e) => setType(e.target.value)}>
+              <option value="deck">Deck</option>
+              <option value="document">Document</option>
+            </select>
+          </label>
+        </div>
+        <div className="modal-foot">
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button type="submit" className="btn btn-primary" disabled={!name.trim() || busy}>
+            <Icon name="plus" /> {busy ? "Creating…" : "Create artifact"}
+          </button>
+        </div>
+      </form>
+    </div>
   );
 }
 
@@ -1349,7 +1365,7 @@ function FilesPanel({ ws, files, notes, generations, artifacts, activeArtifactId
         {allArtifacts.length > 0 ? (
           <ArtifactCard
             expanded={expanded} onToggleExpanded={toggleExpanded}
-            artifactType={ws.artifact_type || "deck"}
+            artifactType={(artifacts.find((a) => a.id === activeArtifactId)?.artifact_type) || "deck"}
             artifacts={allArtifacts}
             runActive={wsRunActive}
             onOpen={(g) => onActivate(g.id)}
@@ -1359,8 +1375,9 @@ function FilesPanel({ ws, files, notes, generations, artifacts, activeArtifactId
           <div className="dropzone" style={{ borderStyle: "solid" }}>
             <div className="dz-title">No artifacts yet</div>
             <div className="dz-sub">
-              Add a prompt in the agent panel (or leave it blank) and hit
-              <strong style={{ color: "var(--wp-fg)" }}> Generate</strong> — the agent reads everything here and builds a deck.
+              Create an artifact from the selector above (name it, pick deck or
+              document), then add a prompt and hit
+              <strong style={{ color: "var(--wp-fg)" }}> Generate</strong> — the agent reads everything here and builds it.
             </div>
           </div>
         )}

@@ -100,11 +100,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_art_ws_slug ON artifacts(workspace_id, slu
 // Migrations for existing DBs — CREATE TABLE IF NOT EXISTS doesn't add
 // new columns on an existing table, so each new column gets its own
 // guarded ALTER TABLE.
-function addColumnIfMissing(table: string, column: string, ddl: string) {
+function addColumnIfMissing(table: string, column: string, ddl: string): boolean {
   const cols = db.query(`PRAGMA table_info(${table})`).all() as any[];
   if (!cols.some((c) => c.name === column)) {
     db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
+    return true;   // freshly added — caller may want to backfill
   }
+  return false;
 }
 // Engine drives both the agent prompt and the build pipeline:
 //   'html' (new default) - agent writes HTML/CSS, live preview, DOM-walking pptx export
@@ -119,6 +121,10 @@ addColumnIfMissing("workspaces",  "theme",               "TEXT NOT NULL DEFAULT 
 // BYOA: which agent adapter runs this workspace's generations.
 addColumnIfMissing("workspaces",  "agent_engine",        "TEXT NOT NULL DEFAULT 'claude'");
 addColumnIfMissing("workspaces",  "agent_model",         "TEXT NOT NULL DEFAULT ''");
+// Artifact type lived on the workspace at first; it now belongs to the
+// individual artifact (a workspace can hold both decks and documents).
+// The workspace column stays for back-compat but is no longer the
+// driver. The artifacts column is backfilled from the workspace once.
 addColumnIfMissing("workspaces",  "artifact_type",       "TEXT NOT NULL DEFAULT 'deck'");
 addColumnIfMissing("design_systems", "builtin",           "INTEGER NOT NULL DEFAULT 0");
 addColumnIfMissing("design_systems", "artifact_type",     "TEXT NOT NULL DEFAULT 'deck'");
@@ -146,6 +152,13 @@ addColumnIfMissing("generations", "artifact_id",         "INTEGER");
 // in place for backward compat / display label; new code reads
 // design_system_id and resolves through the design_systems table.
 addColumnIfMissing("workspaces",  "design_system_id",    "INTEGER");
+// Per-artifact medium (deck | document). When first added, backfill
+// every existing artifact from its workspace's old artifact_type so
+// nothing changes medium on upgrade.
+if (addColumnIfMissing("artifacts", "artifact_type", "TEXT NOT NULL DEFAULT 'deck'")) {
+  db.exec(`UPDATE artifacts SET artifact_type =
+             COALESCE((SELECT w.artifact_type FROM workspaces w WHERE w.id = artifacts.workspace_id), 'deck')`);
+}
 
 // Backfill: every workspace that has generations without artifact_id
 // needs a default "Untitled" artifact, and those gens get re-pointed.

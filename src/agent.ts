@@ -129,7 +129,9 @@ function buildSystemPrompt(ws: any, files: any[], userPrompt?: string, artifact?
   ).join("\n");
   const artifactName = artifact?.name || "Untitled";
   const artifactSlug = artifact?.slug || "untitled";
-  const isDoc = (ws.artifact_type || "deck") === "document";
+  // Medium is a property of the artifact now, not the workspace — a
+  // single workspace can hold both decks and documents.
+  const isDoc = (artifact?.artifact_type || "deck") === "document";
   const fileBase = isDoc ? "doc" : "deck";
   const ds = ws.design_system_id
     ? (db.query("SELECT * FROM design_systems WHERE id = ?").get(ws.design_system_id) as any)
@@ -438,9 +440,9 @@ export async function startGeneration(gen_id: number, opts: { fresh?: boolean } 
   ).get(artifact.id) as any)?.m as (number | null);
   const nextVersion = (maxByArtifact || 0) + 1;
   const artifactDirRel = `./artifacts/${artifact.slug}`;
-  const isDocWs = (ws.artifact_type || "deck") === "document";
-  const baseName = isDocWs ? "doc" : "deck";
-  const versionPin = `Write the ${isDocWs ? "document" : "deck"} to ${artifactDirRel}/${baseName}-v${nextVersion}.html. The HTML IS the deliverable — no separate build step. openwright renders it live in an iframe + exports to PDF / ${isDocWs ? "DOCX" : "PPTX"} from the same source. v${nextVersion} is the next available integer above all existing files in ${artifactDirRel}/.`;
+  const isDocArt = (artifact?.artifact_type || "deck") === "document";
+  const baseName = isDocArt ? "doc" : "deck";
+  const versionPin = `Write the ${isDocArt ? "document" : "deck"} to ${artifactDirRel}/${baseName}-v${nextVersion}.html. The HTML IS the deliverable — no separate build step. openwright renders it live in an iframe + exports to PDF / ${isDocArt ? "DOCX" : "PPTX"} from the same source. v${nextVersion} is the next available integer above all existing files in ${artifactDirRel}/.`;
 
   const openComments = db.query(
     `SELECT id, slide_index, body, created_at

@@ -500,7 +500,7 @@ async function listArtifacts(slug: string) {
   const w = workspaceBySlug(slug);
   if (!w) return err("workspace not found", 404);
   const artifacts = db.query(
-    `SELECT a.id, a.name, a.slug, a.created_at,
+    `SELECT a.id, a.name, a.slug, a.artifact_type, a.created_at,
             (SELECT COUNT(*) FROM generations WHERE artifact_id = a.id) AS gen_count,
             (SELECT artifact_path FROM generations
               WHERE artifact_id = a.id AND status = 'done' AND artifact_path IS NOT NULL
@@ -516,8 +516,9 @@ async function listArtifacts(slug: string) {
 async function createArtifact(slug: string, req: Request) {
   const w = workspaceBySlug(slug);
   if (!w) return err("workspace not found", 404);
-  const { name } = await req.json() as { name: string };
+  const { name, artifact_type } = await req.json() as { name: string; artifact_type?: string };
   if (!name || !name.trim()) return err("name required");
+  const artType = artifact_type && KNOWN_ARTIFACT_TYPES.has(artifact_type) ? artifact_type : "deck";
   // Derive a unique slug within this workspace.
   let base = slugify(name.trim());
   if (!base) base = "artifact";
@@ -527,8 +528,8 @@ async function createArtifact(slug: string, req: Request) {
     candidate = `${base}-${n++}`;
   }
   const ins = db.run(
-    "INSERT INTO artifacts(workspace_id, name, slug, created_at) VALUES(?, ?, ?, ?)",
-    [w.id, name.trim(), candidate, Date.now()]) as any;
+    "INSERT INTO artifacts(workspace_id, name, slug, artifact_type, created_at) VALUES(?, ?, ?, ?, ?)",
+    [w.id, name.trim(), candidate, artType, Date.now()]) as any;
   return json({
     artifact: db.query("SELECT * FROM artifacts WHERE id = ?").get(Number(ins.lastInsertRowid)),
   }, 201);
@@ -799,10 +800,8 @@ async function exportDocxFromHtml(gen_id: string) {
   if (!/\.html$/i.test(g.artifact_path)) return err("export-docx requires an HTML artifact", 400);
   if (!existsSync(g.artifact_path)) return err("artifact file missing on disk", 404);
   // DOCX only makes sense for documents — decks have no block flow.
-  const ws = db.query(
-    "SELECT w.artifact_type FROM workspaces w JOIN artifacts a ON a.workspace_id = w.id WHERE a.id = ?",
-  ).get(g.artifact_id) as any;
-  if (ws && (ws.artifact_type || "deck") !== "document") {
+  const art = db.query("SELECT artifact_type FROM artifacts WHERE id = ?").get(g.artifact_id) as any;
+  if (art && (art.artifact_type || "deck") !== "document") {
     return err("export-docx is only available for document artifacts", 400);
   }
   if (!existsSync(HTML_DOCX_EXPORT)) return err("html-engine docx exporter not found", 500);
@@ -1167,11 +1166,17 @@ Bun.serve({
       // — we want that change to take effect immediately for previews
       // and downstream exports (PDF / PPTX both render via this URL).
       if (rel.endsWith(".html")) {
-        const wsSlug = rel.split("/")[0];
-        const ws = db.query("SELECT design_system_id, artifact_type FROM workspaces WHERE slug = ?").get(wsSlug) as any;
+        const parts = rel.split("/");
+        const wsSlug = parts[0];
+        const artSlug = parts[1] === "artifacts" ? parts[2] : null;
+        const ws = db.query("SELECT id, design_system_id FROM workspaces WHERE slug = ?").get(wsSlug) as any;
         if (ws && ws.design_system_id) {
-          // Documents pull the system's document variant; decks the deck.
-          const variant = (ws.artifact_type || "deck") === "document" ? "?type=document" : "";
+          // The artifact's own type picks the variant: documents pull
+          // the system's document CSS, decks the deck CSS.
+          const art = artSlug
+            ? db.query("SELECT artifact_type FROM artifacts WHERE workspace_id = ? AND slug = ?").get(ws.id, artSlug) as any
+            : null;
+          const variant = art && (art.artifact_type || "deck") === "document" ? "?type=document" : "";
           const html = readFileSync(t, "utf-8");
           const patched = html.replace(
             /<link\s+rel="stylesheet"\s+href="\/api\/design-systems\/\d+\/css\.css(?:\?[^"]*)?"\s*\/?>/i,
