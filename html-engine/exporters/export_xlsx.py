@@ -108,6 +108,26 @@ def parse_number(s: str):
     return round(val, 6)
 
 
+def cell_number(text: str):
+    """Numeric value for a cell, by CONTENT, or None to keep it text.
+
+    Detecting numbers by class alone meant any number the agent forgot to
+    tag landed as text — which makes Excel flag "number stored as text".
+    So parse every cell, but keep true codes/IDs as text:
+      - zero-padded values (0007, 01) — leading zeros are meaningful
+      - very long digit runs (>15) — account/card numbers Excel mangles
+    """
+    n = parse_number(text)
+    if n is None:
+        return None
+    core = re.sub(r"[,$€£¥%()\s]", "", (text or "").strip())
+    if re.match(r"-?0\d", core):
+        return None
+    if len(re.sub(r"\D", "", core)) > 15:
+        return None
+    return n
+
+
 def sanitize_title(name: str, used: set) -> str:
     # Excel sheet titles: <=31 chars, no []:*?/\
     t = re.sub(r"[\[\]:\*\?/\\]", " ", name or "Sheet").strip()[:31] or "Sheet"
@@ -147,7 +167,7 @@ def build(data: dict, out_path: str):
             is_total = bool(row.get("total"))
             for ci, c in enumerate(row.get("cells") or [], 1):
                 text = c.get("text", "")
-                num = parse_number(text) if c.get("num") else None
+                num = cell_number(text)
                 value = num if num is not None else text
                 cell = ws.cell(row=r, column=ci, value=value)
                 cell.font = Font(bold=is_total or ci == 1, color=INK, size=11)
