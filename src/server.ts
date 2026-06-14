@@ -847,7 +847,7 @@ async function saveEdits(gen_id: string, req: Request) {
   const body = await req.json() as { html?: string };
   if (!body.html || typeof body.html !== "string") return err("html body required", 400);
   // Resolve next version path. Pattern: ".../deck-vN.html" → "deck-v(N+1).html".
-  const m = g.artifact_path.match(/^(.+\/deck-v)(\d+)(\.html)$/i);
+  const m = g.artifact_path.match(/^(.+\/(?:deck|doc)-v)(\d+)(\.html)$/i);
   if (!m) return err("artifact_path does not follow deck-vN.html convention", 400);
   let nextV = parseInt(m[2], 10) + 1;
   let newPath = `${m[1]}${nextV}${m[3]}`;

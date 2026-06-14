@@ -138,23 +138,41 @@ function buildSystemPrompt(ws: any, files: any[], userPrompt?: string, artifact?
   if (ds?.css) { try { writeFileSync(dsCssPath, ds.css); } catch {} }
   const persona = ws.persona || "terse-technical";
   const personaGuidance = PERSONA_GUIDANCE[persona] || PERSONA_GUIDANCE["terse-technical"];
-  return `You are openwright, an agent whose only job is to turn a workspace of mixed-format
-files into a slide deck.
+  const isDoc = (ws.artifact_type || "deck") === "document";
+  const fileBase = isDoc ? "doc" : "deck";
 
-You write the deck as a SINGLE HTML FILE that openwright renders live in an
-iframe (no build step). The same source ships to PDF (chromium print) and
-to editable PPTX (DOM-walking exporter) — so HTML/CSS is the source of
-truth; what you write is what the user sees.
+  // Medium-specific section: how to actually build the artifact.
+  const buildSection = isDoc ? `# The document
 
-Host OS: ${process.platform === "win32" ? "Windows — use Windows-style paths (C:\\...) and PowerShell/cmd-compatible commands" : process.platform === "darwin" ? "macOS (POSIX paths and shell)" : "Linux (POSIX paths and shell)"}
-Workspace: "${ws.name}" (slug ${ws.slug})
-Workspace directory: ${join(WORKSPACE_ROOT, ws.slug)}
-Artifact for this run: "${artifactName}" — outputs go in artifacts/${artifactSlug}/.
-Design system: "${dsLabel}"
-Files available:
-${fileList || "  (no files)"}
+Write a flowing HTML document — NOT slides. No deck shell, no
+<deck-stage>, no fixed canvas. Structure:
 
-# The deck shell
+    <link rel="stylesheet" href="${dsCssUrl}">
+    <article class="doc-page">
+      <p class="eyebrow">Section · Category</p>
+      <h1>The document title</h1>
+      <p class="lede">A one-line standfirst that frames the document.</p>
+      <div class="doc-meta"><span>Author</span><span>Date</span></div>
+
+      <h2>A section heading</h2>
+      <p>Running prose. Use real paragraphs, not bullet fragments.</p>
+      <ul><li>Bullets where a list genuinely helps.</li></ul>
+
+      <h2>Another section</h2>
+      <blockquote>A pulled quote or key takeaway.</blockquote>
+      <div class="alert info"><strong>Note.</strong> A callout aside.</div>
+      <table><thead>…</thead><tbody>…</tbody></table>
+    </article>
+
+The single .doc-page article is the whole document; it scrolls. openwright
+renders it live and exports to PDF (chromium print) and to editable DOCX
+(DOM-walking exporter), so the HTML is the source of truth.
+
+Stay within block-flow constructs the design system styles: headings,
+paragraphs, lists, tables, blockquotes, callouts, bold/italic, code, and
+horizontal rules. Do NOT use floats, multi-column, flex/grid layouts, or
+absolute positioning — those don't survive the DOCX export. Write for
+reading: prose over fragments, clear section hierarchy.` : `# The deck shell
 
 Reference the openwright-provided deck shell + this workspace's design-
 system CSS at the top of your file:
@@ -178,7 +196,25 @@ currentColor).
     ${join(HTML_ENGINE_DIR, "examples", "sample.html")}
 
 It uses CSS variables — DO NOT hardcode colors or font sizes. Use the
-variables so the design-system picker keeps working across themes.
+variables so the design-system picker keeps working across themes.`;
+
+  return `You are openwright, an agent whose only job is to turn a workspace of mixed-format
+files into ${isDoc ? "a document" : "a slide deck"}.
+
+You write the ${isDoc ? "document" : "deck"} as a SINGLE HTML FILE that openwright renders live in an
+iframe (no build step). The same source ships to PDF (chromium print) and
+to editable ${isDoc ? "DOCX" : "PPTX"} (DOM-walking exporter) — so HTML/CSS is the source of
+truth; what you write is what the user sees.
+
+Host OS: ${process.platform === "win32" ? "Windows — use Windows-style paths (C:\\...) and PowerShell/cmd-compatible commands" : process.platform === "darwin" ? "macOS (POSIX paths and shell)" : "Linux (POSIX paths and shell)"}
+Workspace: "${ws.name}" (slug ${ws.slug})
+Workspace directory: ${join(WORKSPACE_ROOT, ws.slug)}
+Artifact for this run: "${artifactName}" — outputs go in artifacts/${artifactSlug}/.
+Design system: "${dsLabel}"
+Files available:
+${fileList || "  (no files)"}
+
+${buildSection}
 
 # Design system tokens in scope
 
@@ -209,10 +245,10 @@ ${personaGuidance}
 # Workflow
 
 1. List the workspace files. Read the ones that matter.
-2. Look at the example deck for slide layout idioms.
+${isDoc ? "2. Plan the document outline before writing — sections, hierarchy, flow." : "2. Look at the example deck for slide layout idioms."}
 3. If anything material is unclear, emit "ASK: …" on its own line and stop.
-4. Otherwise, write the deck to artifacts/${artifactSlug}/deck-vN.html. N is
-   the next available integer above existing files. Pin to the version
+4. Otherwise, write the ${isDoc ? "document" : "deck"} to artifacts/${artifactSlug}/${fileBase}-vN.html. N
+   is the next available integer above existing files. Pin to the version
    the runner tells you to use in the trigger message.
 5. Final message starts with "DONE:" + 1-sentence summary.`;
 }
@@ -224,7 +260,7 @@ function inferVersion(name: string): number {
 
 function findLatestArtifact(dir: string): { name: string; path: string } | null {
   if (!existsSync(dir)) return null;
-  const files = readdirSync(dir).filter((f) => /^deck-v\d+\.html$/i.test(f));
+  const files = readdirSync(dir).filter((f) => /^(deck|doc)-v\d+\.html$/i.test(f));
   if (!files.length) return null;
   files.sort((a, b) => inferVersion(b) - inferVersion(a));
   return { name: files[0]!, path: join(dir, files[0]!) };
@@ -399,7 +435,9 @@ export async function startGeneration(gen_id: number, opts: { fresh?: boolean } 
   ).get(artifact.id) as any)?.m as (number | null);
   const nextVersion = (maxByArtifact || 0) + 1;
   const artifactDirRel = `./artifacts/${artifact.slug}`;
-  const versionPin = `Write the deck to ${artifactDirRel}/deck-v${nextVersion}.html. The HTML IS the deliverable — no separate build step. openwright renders it live in an iframe + exports to PDF / PPTX from the same source. v${nextVersion} is the next available integer above all existing files in ${artifactDirRel}/.`;
+  const isDocWs = (ws.artifact_type || "deck") === "document";
+  const baseName = isDocWs ? "doc" : "deck";
+  const versionPin = `Write the ${isDocWs ? "document" : "deck"} to ${artifactDirRel}/${baseName}-v${nextVersion}.html. The HTML IS the deliverable — no separate build step. openwright renders it live in an iframe + exports to PDF / ${isDocWs ? "DOCX" : "PPTX"} from the same source. v${nextVersion} is the next available integer above all existing files in ${artifactDirRel}/.`;
 
   const openComments = db.query(
     `SELECT id, slide_index, body, created_at

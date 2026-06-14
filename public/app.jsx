@@ -1351,6 +1351,7 @@ function FilesPanel({ ws, files, notes, generations, artifacts, activeArtifactId
         {allArtifacts.length > 0 ? (
           <ArtifactCard
             expanded={expanded} onToggleExpanded={toggleExpanded}
+            artifactType={ws.artifact_type || "deck"}
             artifacts={allArtifacts}
             runActive={wsRunActive}
             onOpen={(g) => onActivate(g.id)}
@@ -1456,7 +1457,8 @@ function NoteRow({ note, onDelete }) {
   );
 }
 
-function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted, expanded, onToggleExpanded }) {
+function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted, expanded, onToggleExpanded, artifactType }) {
+  const isDoc = artifactType === "document";
   const [open, setOpen] = useState(false);
   // Current slide inside the preview iframe (0-based) — the deck shell
   // broadcasts workpod-slide messages on every slide change so the
@@ -1546,20 +1548,20 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted, e
   return (
     <div ref={artifactRef} className={"artifact fade-up" + (expanded ? " expanded" : "")}>
       {previewUrl && !previewHidden && (
-        <div className="artifact-preview">
+        <div className={"artifact-preview" + (isDoc ? " is-doc" : "")}>
           {!previewLoaded && <div className="preview-loading"><Spinner style={{ width: 22, height: 22 }} /></div>}
           {/* cur.id in the src busts the iframe when a new generation
               lands on the SAME file (agents often edit deck-vN.html in
               place for comment rounds) — path alone never changes then,
               and the preview silently stayed stale until a manual
               refresh. */}
-          <iframe ref={previewRef} key={`${previewUrl}#${cur.id}`} src={`${previewUrl}?_g=${cur.id}`} title="Live deck preview"
+          <iframe ref={previewRef} key={`${previewUrl}#${cur.id}`} src={`${previewUrl}?_g=${cur.id}`} title="Live preview"
                   sandbox="allow-scripts allow-same-origin"
                   onLoad={() => setPreviewLoaded(true)}
                   style={{ opacity: previewLoaded ? 1 : 0,
                            transition: 'opacity 480ms var(--um-ease-out)' }} />
           {cur.artifact_id && (
-            <QuickComment artifactId={cur.artifact_id} slideIndex={curSlide}
+            <QuickComment artifactId={cur.artifact_id} slideIndex={curSlide} isDoc={isDoc}
                           onAdded={() => setCommentsBump((b) => b + 1)} />
           )}
           <div className="preview-controls">
@@ -1593,7 +1595,7 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted, e
             <Icon name="chevron-down" />
           </button>
         )}
-        {cur.artifact_id && <CommentsSection artifactId={cur.artifact_id} wsSlug={wsSlug}
+        {cur.artifact_id && <CommentsSection artifactId={cur.artifact_id} wsSlug={wsSlug} isDoc={isDoc}
                                              refreshKey={commentsBump}
                                              onKickedOff={(genId) => { onRefresh(); onRunStarted?.(genId); }}
                                              onJumpToSlide={(idx) => {
@@ -1728,17 +1730,19 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted, e
 // Floating quick-comment affordance over the live preview — one click
 // to leave a note targeted at the slide currently being viewed (the
 // deck shell broadcasts the index to the parent).
-function QuickComment({ artifactId, slideIndex, onAdded }) {
+function QuickComment({ artifactId, slideIndex, onAdded, isDoc }) {
   const [open, setOpen] = useState(false);
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
+  // Documents have no slide index — comments land at the document level.
+  const label = isDoc ? "Comment on this document" : `Comment on slide ${slideIndex + 1}`;
   const submit = async (e) => {
     e?.preventDefault();
     if (!body.trim() || busy) return;
     setBusy(true);
     try {
       await postJson(`/api/artifacts/${artifactId}/comments`,
-        { slide_index: slideIndex, body: body.trim() });
+        { slide_index: isDoc ? null : slideIndex, body: body.trim() });
       setBody("");
       setOpen(false);
       onAdded?.();
@@ -1749,9 +1753,9 @@ function QuickComment({ artifactId, slideIndex, onAdded }) {
     <div className="preview-quick-comment" onClick={(e) => e.stopPropagation()}>
       {open && (
         <form className="qc-pop" onSubmit={submit}>
-          <div className="qc-title">Comment on slide {slideIndex + 1}</div>
+          <div className="qc-title">{label}</div>
           <textarea autoFocus rows={2} value={body}
-                    placeholder="What should change on this slide?"
+                    placeholder={isDoc ? "What should change in this document?" : "What should change on this slide?"}
                     onChange={(e) => setBody(e.target.value)}
                     onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit(e); }} />
           <div className="qc-row">
@@ -1762,10 +1766,10 @@ function QuickComment({ artifactId, slideIndex, onAdded }) {
           </div>
         </form>
       )}
-      <button type="button" className="qc-fab" title={`Comment on slide ${slideIndex + 1}`}
+      <button type="button" className="qc-fab" title={label}
               onClick={() => setOpen((o) => !o)}>
         <Icon name="message-square" />
-        <span>S{slideIndex + 1}</span>
+        <span>{isDoc ? "Note" : `S${slideIndex + 1}`}</span>
       </button>
     </div>
   );
@@ -1774,7 +1778,7 @@ function QuickComment({ artifactId, slideIndex, onAdded }) {
 // Per-artifact comments — slide-level notes the user leaves for the
 // agent's next run. Open comments get surfaced into the trigger
 // message as targeted requirements.
-function CommentsSection({ artifactId, wsSlug, refreshKey, onKickedOff, onJumpToSlide, runActive }) {
+function CommentsSection({ artifactId, wsSlug, refreshKey, onKickedOff, onJumpToSlide, runActive, isDoc }) {
   const [open, setOpen] = useState(false);
   const [comments, setComments] = useState([]);
   const [slideIdx, setSlideIdx] = useState("");   // string so blank means "deck-level"
@@ -1833,11 +1837,15 @@ function CommentsSection({ artifactId, wsSlug, refreshKey, onKickedOff, onJumpTo
       {open && (
         <div className="vhist chist">
           <form className="comment-form" onSubmit={submit}>
-            <input className="comment-slide-input" type="number" min="1"
-                   placeholder="Slide #" value={slideIdx}
-                   onChange={(e) => setSlideIdx(e.target.value)} />
+            {!isDoc && (
+              <input className="comment-slide-input" type="number" min="1"
+                     placeholder="Slide #" value={slideIdx}
+                     onChange={(e) => setSlideIdx(e.target.value)} />
+            )}
             <textarea className="comment-body-input"
-                      placeholder="Leave a comment for the next agent run — e.g. 'tighten the bullets on slide 3, drop the marketing tone'"
+                      placeholder={isDoc
+                        ? "Leave a comment for the next agent run — e.g. 'tighten the opening section, drop the marketing tone'"
+                        : "Leave a comment for the next agent run — e.g. 'tighten the bullets on slide 3, drop the marketing tone'"}
                       value={body}
                       onChange={(e) => setBody(e.target.value)}
                       rows={2} />
@@ -1895,7 +1903,7 @@ function CommentsSection({ artifactId, wsSlug, refreshKey, onKickedOff, onJumpTo
                   {openC.length > 0 && (
                     <>
                       <div className="comment-group-head">Open <span className="cnt">{openC.length}</span></div>
-                      {openC.map((c) => <CommentRow key={c.id} comment={c} onChange={refresh} disabled={runActive} onJump={onJumpToSlide} />)}
+                      {openC.map((c) => <CommentRow key={c.id} comment={c} onChange={refresh} disabled={runActive} onJump={onJumpToSlide} isDoc={isDoc} />)}
                     </>
                   )}
                   {addrC.length > 0 && (
@@ -1906,7 +1914,7 @@ function CommentsSection({ artifactId, wsSlug, refreshKey, onKickedOff, onJumpTo
                           <Icon name="check-check" /> {acceptingAll ? "Accepting…" : `Accept all ${addrC.length}`}
                         </button>
                       </div>
-                      {addrC.map((c) => <CommentRow key={c.id} comment={c} onChange={refresh} disabled={runActive} onJump={onJumpToSlide} />)}
+                      {addrC.map((c) => <CommentRow key={c.id} comment={c} onChange={refresh} disabled={runActive} onJump={onJumpToSlide} isDoc={isDoc} />)}
                     </>
                   )}
                   {resC.length > 0 && (
@@ -1915,7 +1923,7 @@ function CommentsSection({ artifactId, wsSlug, refreshKey, onKickedOff, onJumpTo
                         <Icon name={showResolved ? "chevron-down" : "chevron-right"} style={{ width: 12, height: 12 }} />
                         {showResolved ? "Hide" : "Show"} {resC.length} resolved
                       </button>
-                      {showResolved && resC.map((c) => <CommentRow key={c.id} comment={c} onChange={refresh} disabled={runActive} onJump={onJumpToSlide} />)}
+                      {showResolved && resC.map((c) => <CommentRow key={c.id} comment={c} onChange={refresh} disabled={runActive} onJump={onJumpToSlide} isDoc={isDoc} />)}
                     </>
                   )}
                 </>
@@ -1928,14 +1936,14 @@ function CommentsSection({ artifactId, wsSlug, refreshKey, onKickedOff, onJumpTo
   );
 }
 
-function CommentRow({ comment, onChange, disabled, onJump }) {
+function CommentRow({ comment, onChange, disabled, onJump, isDoc }) {
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
   const [reopening, setReopening] = useState(false);   // addressed → open w/ note
   const [note, setNote] = useState("");
   const [draft, setDraft] = useState(comment.body);
   const where = (typeof comment.slide_index === "number" && comment.slide_index >= 0)
-    ? `Slide ${comment.slide_index + 1}` : "Deck";
+    ? `Slide ${comment.slide_index + 1}` : (isDoc ? "Document" : "Deck");
   const resolved = comment.status === "resolved";
   const addressed = comment.status === "addressed";
   // Editable only while still open (not folded into a run, not yet
