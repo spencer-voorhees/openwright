@@ -1621,6 +1621,15 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted, e
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editsDirty, setEditsDirty] = useState(false);
+  // A run can kick off (from the agent panel) while the preview is being
+  // edited — drop out of edit mode so the two don't fight over the file.
+  useEffect(() => {
+    if (runActive && editing) {
+      previewRef.current?.contentWindow?.postMessage({ type: "workpod-edit-disable" }, "*");
+      setEditing(false);
+      setEditsDirty(false);
+    }
+  }, [runActive, editing]);
   // null = follow latest. Setting an id pins to that version.
   const [pinnedId, setPinnedId] = useState(null);
   useEffect(() => {
@@ -1775,7 +1784,9 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted, e
           )}
           {isHtml && previewUrl && (
             <button className={"btn" + (editing ? " btn-primary" : " btn-ghost")}
+                    disabled={runActive}
                     onClick={() => {
+                      if (runActive) return;
                       const ifr = previewRef.current;
                       if (!ifr?.contentWindow) return;
                       const next = !editing;
@@ -1783,7 +1794,8 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted, e
                         { type: next ? "workpod-edit-enable" : "workpod-edit-disable" }, "*");
                       setEditing(next);
                     }}
-                    title={editing ? "Exit edit mode" : "Click-edit text in the deck preview"}>
+                    title={runActive ? "Locked while the agent is working"
+                           : editing ? "Exit edit mode" : "Click-edit text in the preview"}>
               <Icon name={editing ? "pencil-off" : "pencil"} /> {editing ? "Editing" : "Edit"}
             </button>
           )}
