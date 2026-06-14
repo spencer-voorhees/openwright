@@ -109,11 +109,11 @@ def parse_number(s: str):
 
 
 def cell_number(text: str):
-    """Numeric value for a cell, by CONTENT, or None to keep it text.
+    """Numeric value for a cell by CONTENT, or None to keep it text.
 
     Detecting numbers by class alone meant any number the agent forgot to
     tag landed as text — which makes Excel flag "number stored as text".
-    So parse every cell, but keep true codes/IDs as text:
+    So parse by content, but keep true codes/IDs as text:
       - zero-padded values (0007, 01) — leading zeros are meaningful
       - very long digit runs (>15) — account/card numbers Excel mangles
     """
@@ -126,6 +126,29 @@ def cell_number(text: str):
     if len(re.sub(r"\D", "", core)) > 15:
         return None
     return n
+
+
+# Cells that are genuinely "no value" — they don't make a numeric column
+# text, and they stay text themselves (Excel doesn't flag non-numbers).
+SENTINELS = {"", "-", "–", "—", ".", "n/a", "na", "tbd", "tbc", "—", "null"}
+
+
+def numeric_columns(rows: list) -> set:
+    """Decide column type once, for the whole column — a column is numeric
+    only if every real value in it is a number. So a code column with one
+    zero-padded ID stays text top to bottom instead of going half-and-half.
+    """
+    seen, broken = {}, set()
+    for row in rows:
+        for ci, c in enumerate(row.get("cells") or [], 1):
+            t = (c.get("text") or "").strip()
+            if t.lower() in SENTINELS:
+                continue
+            if cell_number(t) is not None:
+                seen[ci] = seen.get(ci, 0) + 1
+            else:
+                broken.add(ci)            # a non-number lives here → text column
+    return {ci for ci, n in seen.items() if n and ci not in broken}
 
 
 def sanitize_title(name: str, used: set) -> str:
@@ -150,6 +173,7 @@ def build(data: dict, out_path: str):
         ws = wb.create_sheet(title=sanitize_title(s.get("name"), used))
         widths = {}
         r = 1
+        num_cols = numeric_columns(s.get("rows") or [])
 
         headers = s.get("headers") or []
         if headers:
@@ -167,7 +191,9 @@ def build(data: dict, out_path: str):
             is_total = bool(row.get("total"))
             for ci, c in enumerate(row.get("cells") or [], 1):
                 text = c.get("text", "")
-                num = cell_number(text)
+                # Only columns the whole-column scan deemed numeric write
+                # numbers; a sentinel ("N/A") in a numeric column stays text.
+                num = cell_number(text) if ci in num_cols else None
                 value = num if num is not None else text
                 cell = ws.cell(row=r, column=ci, value=value)
                 cell.font = Font(bold=is_total or ci == 1, color=INK, size=11)
