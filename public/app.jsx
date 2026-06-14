@@ -61,6 +61,11 @@ function toPascal(s) {
   return s.split("-").map((p) => p ? p[0].toUpperCase() + p.slice(1) : "").join("");
 }
 
+// Per-medium icon: documents read as a page, decks as a slide.
+function artifactTypeIcon(type) {
+  return (type || "deck") === "document" ? "file-text" : "presentation";
+}
+
 // Markdown renderer for chat content. Configured with breaks=true so
 // single newlines become <br>, matching how chat-style prose reads.
 // Sanitization isn't bolted on because the content source is our own
@@ -1234,7 +1239,7 @@ function ArtifactSelector({ ws, artifacts, activeArtifactId, onSelect, onChange,
   };
   return (
     <span className="ws-chip ws-chip-artifact on" onClick={(e) => e.stopPropagation()}>
-      <Icon name="layers" />
+      <Icon name={artifactTypeIcon(active?.artifact_type)} />
       <button className="ws-chip-artifact-btn" onClick={() => setOpen((o) => !o)}>
         {active ? active.name : "No artifact"}
         <Icon name="chevron-down" style={{ width: 10, height: 10, marginLeft: 4 }} />
@@ -1245,7 +1250,7 @@ function ArtifactSelector({ ws, artifacts, activeArtifactId, onSelect, onChange,
           {artifacts.map((a) => (
             <div className={"vrow" + (a.id === activeArtifactId ? " cur" : "")} key={a.id}
               onClick={() => { setOpen(false); onSelect?.(a.id); }}>
-              <span className="vdot" style={{ background: "var(--wp-accent)" }} />
+              <Icon name={artifactTypeIcon(a.artifact_type)} className="vrow-type-ic" />
               <div className="vmain">
                 <div className="vlabel">
                   {a.name}
