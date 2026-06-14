@@ -1842,7 +1842,7 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted, e
                         setEditing(false);
                         setEditsDirty(false);
                       }}>
-                <Icon name={editsDirty ? "x" : "check"} /> {editsDirty ? "Discard" : "Done"}
+                <Icon name="x" /> {editsDirty ? "Discard" : "Cancel"}
               </button>
             </>
           )}
