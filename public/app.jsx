@@ -1427,30 +1427,42 @@ function FilesPanel({ ws, files, notes, generations, artifacts, activeArtifactId
             onRunStarted={(genId) => { if (genId) onActivate(genId); onOpenAgent(); }} />
         ) : artifacts.length === 0 ? (
           <div className="dropzone" style={{ borderStyle: "solid" }}>
-            <div className="dz-title">No artifacts yet</div>
+            <div className="dz-title">{wsRunActive ? "Working…" : "No artifacts yet"}</div>
             <div className="dz-sub">
-              An artifact is one deliverable — a deck or a document. Create one,
-              then add a prompt and hit
-              <strong style={{ color: "var(--wp-fg)" }}> Generate</strong>.
+              {wsRunActive
+                ? <>The agent is working. The first version will appear here when it lands.</>
+                : <>An artifact is one deliverable — a deck or a document. Create one,
+                    then add a prompt and hit <strong style={{ color: "var(--wp-fg)" }}> Generate</strong>.</>}
             </div>
-            <button className="btn btn-primary" style={{ marginTop: 14 }} onClick={onNewArtifact}>
-              <Icon name="plus" /> Create your first artifact
-            </button>
+            {wsRunActive ? (
+              <button className="btn btn-primary" style={{ marginTop: 14 }} onClick={onOpenAgent}>
+                <Spinner /> Watch the agent
+              </button>
+            ) : (
+              <button className="btn btn-primary" style={{ marginTop: 14 }} onClick={onNewArtifact}>
+                <Icon name="plus" /> Create your first artifact
+              </button>
+            )}
           </div>
         ) : (
           // The workspace already has artifacts; this one just has no
-          // built version yet — point at Generate, not "create another".
+          // built version yet — point at Generate (or show progress).
           <div className="dropzone" style={{ borderStyle: "solid" }}>
-            <div className="dz-title">Nothing built yet</div>
+            <div className="dz-title">{wsRunActive ? "Building…" : "Nothing built yet"}</div>
             <div className="dz-sub">
-              Add a prompt in the agent panel and hit
-              <strong style={{ color: "var(--wp-fg)" }}> Generate</strong> to build
-              {" "}{artifacts.find((a) => a.id === activeArtifactId)?.name
-                ? `“${artifacts.find((a) => a.id === activeArtifactId).name}”`
-                : "this artifact"}.
+              {wsRunActive
+                ? <>The agent is building
+                    {" "}{artifacts.find((a) => a.id === activeArtifactId)?.name
+                      ? `“${artifacts.find((a) => a.id === activeArtifactId).name}”`
+                      : "this artifact"}. The first version will appear here.</>
+                : <>Add a prompt in the agent panel and hit
+                    <strong style={{ color: "var(--wp-fg)" }}> Generate</strong> to build
+                    {" "}{artifacts.find((a) => a.id === activeArtifactId)?.name
+                      ? `“${artifacts.find((a) => a.id === activeArtifactId).name}”`
+                      : "this artifact"}.</>}
             </div>
             <button className="btn btn-primary" style={{ marginTop: 14 }} onClick={onOpenAgent}>
-              <Icon name="bot" /> Open the agent
+              {wsRunActive ? <><Spinner /> Watch the agent</> : <><Icon name="bot" /> Open the agent</>}
             </button>
           </div>
         )}

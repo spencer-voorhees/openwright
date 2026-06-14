@@ -71,6 +71,21 @@
 
   .alerts { display: flex; flex-direction: column; gap: 18px; max-width: 1500px; }
   .cta { display: flex; gap: 14px; margin-top: 8px; }
+
+  /* Icons — the deck shell swaps <i data-lucide> for inline SVG. Size
+     and color them per context. */
+  [data-lucide] { stroke-width: 1.75; }
+  .title-ic { width: 30px; height: 30px; color: var(--accent); }
+  .divider-ic { width: 72px; height: 72px; color: var(--accent); stroke-width: 1.5; }
+  .card-ic { width: 38px; height: 38px; color: var(--accent); margin-bottom: 4px; }
+  .metric-ic { width: 34px; height: 34px; color: var(--accent); }
+  .agenda { display: flex; flex-direction: column; gap: 22px; }
+  .arow { display: flex; align-items: center; gap: 20px; font-size: var(--type-body); color: var(--fg-muted); }
+  .arow strong { color: var(--fg); }
+  .arow .agenda-ic { width: 30px; height: 30px; color: var(--accent); flex: 0 0 auto; }
+  .alert .a-ic { width: 24px; height: 24px; flex: 0 0 auto; }
+  .alert { display: flex; align-items: flex-start; gap: 14px; }
+  .btn .b-ic { width: 20px; height: 20px; margin-right: 8px; vertical-align: -4px; }
 </style>
 </head>
 <body>
@@ -79,6 +94,7 @@
 <!-- 1. Title -->
 <section>
   <div class="row"><div class="accent-rule"></div>
+    <i data-lucide="satellite-dish" class="title-ic"></i>
     <span class="eyebrow">Deep Field Brief &middot; Cycle 12</span></div>
   <h1>The Helios Survey</h1>
   <p class="lede">Charting an uncharted star system in a single orbital pass &mdash; and what that one pass teaches about working under hard constraints.</p>
@@ -100,16 +116,17 @@
 <section>
   <span class="eyebrow">What we'll cover</span>
   <h2>Three questions, in order</h2>
-  <ul class="bullets">
-    <li><strong>The approach</strong> &mdash; why one clean pass beats many partial sweeps</li>
-    <li><strong>The instruments</strong> &mdash; what each sensor array contributes, and where they overlap</li>
-    <li><strong>The trade-off</strong> &mdash; what a single-pass survey gives up, stated plainly</li>
-  </ul>
+  <div class="agenda">
+    <div class="arow"><i data-lucide="compass" class="agenda-ic"></i><div><strong>The approach</strong> &mdash; why one clean pass beats many partial sweeps</div></div>
+    <div class="arow"><i data-lucide="telescope" class="agenda-ic"></i><div><strong>The instruments</strong> &mdash; what each sensor array contributes, and where they overlap</div></div>
+    <div class="arow"><i data-lucide="scale" class="agenda-ic"></i><div><strong>The trade-off</strong> &mdash; what a single-pass survey gives up, stated plainly</div></div>
+  </div>
 </section>
 
 <!-- 4. Section divider -->
 <section>
   <div class="divider">
+    <i data-lucide="compass" class="divider-ic"></i>
     <span class="eyebrow">Part one</span>
     <div class="num">01</div>
     <h1>The approach</h1>
@@ -144,6 +161,7 @@
 <!-- 7. Section divider -->
 <section>
   <div class="divider">
+    <i data-lucide="telescope" class="divider-ic"></i>
     <span class="eyebrow">Part two</span>
     <div class="num">02</div>
     <h1>The instruments</h1>
@@ -156,19 +174,19 @@
   <h2>Three shells, three sensors</h2>
   <div class="cards">
     <div class="card">
-      <div class="bar green"></div>
+      <i data-lucide="telescope" class="card-ic"></i>
       <span class="kicker">01 / Optical</span>
       <h3>Inner orbit</h3>
       <p>A high-resolution sweep of the inner planets. Complete this cycle.</p>
     </div>
     <div class="card">
-      <div class="bar"></div>
+      <i data-lucide="radio" class="card-ic"></i>
       <span class="kicker">02 / Spectral</span>
       <h3>Mid belt</h3>
       <p>Medium-resolution spectrometry across the debris belt. Partial coverage.</p>
     </div>
     <div class="card">
-      <div class="bar red"></div>
+      <i data-lucide="orbit" class="card-ic"></i>
       <span class="kicker">03 / Gravimetric</span>
       <h3>Outer dark</h3>
       <p>A low-resolution gravimetric estimate of the outer dark. Queued for the next pass.</p>
@@ -204,14 +222,17 @@
   <span class="eyebrow">The pass, by the numbers</span>
   <div class="metrics">
     <div class="metric">
+      <i data-lucide="orbit" class="metric-ic"></i>
       <div class="big">1<span>&times;</span></div>
       <div class="cap">Complete sweep of the system, no return burns</div>
     </div>
     <div class="metric">
+      <i data-lucide="antenna" class="metric-ic"></i>
       <div class="big">3</div>
       <div class="cap">Sensor arrays, fused into one continuous map</div>
     </div>
     <div class="metric">
+      <i data-lucide="gauge" class="metric-ic"></i>
       <div class="big">92<span>%</span></div>
       <div class="cap">Coverage at survey grade on first light</div>
     </div>
@@ -237,6 +258,7 @@
 <!-- 12. Section divider -->
 <section>
   <div class="divider">
+    <i data-lucide="scale" class="divider-ic"></i>
     <span class="eyebrow">Part three</span>
     <div class="num">03</div>
     <h1>The trade-off</h1>
@@ -254,9 +276,9 @@
   <span class="eyebrow">What to watch</span>
   <h2>Honest about the gaps</h2>
   <div class="alerts">
-    <div class="alert info"><strong>By design.</strong> The outer dark is a gravimetric sketch, not a survey. Treat its features as candidates, not findings.</div>
-    <div class="alert warn"><strong>Drift.</strong> Position error accumulates the further the probe travels from its two reference stars. Re-fix before any maneuver call.</div>
-    <div class="alert negative"><strong>Do not.</strong> Do not task a follow-up burn off the outer-shell data alone. It has not cleared survey grade.</div>
+    <div class="alert info"><i data-lucide="info" class="a-ic"></i><div><strong>By design.</strong> The outer dark is a gravimetric sketch, not a survey. Treat its features as candidates, not findings.</div></div>
+    <div class="alert warn"><i data-lucide="triangle-alert" class="a-ic"></i><div><strong>Drift.</strong> Position error accumulates the further the probe travels from its two reference stars. Re-fix before any maneuver call.</div></div>
+    <div class="alert negative"><i data-lucide="circle-x" class="a-ic"></i><div><strong>Do not.</strong> Do not task a follow-up burn off the outer-shell data alone. It has not cleared survey grade.</div></div>
   </div>
 </section>
 
@@ -267,8 +289,8 @@
   <h1>Sharpen the outer dark.</h1>
   <p class="lede">One targeted pass over the gravimetric estimate turns the sketch into a survey. The frame is already in orbit; the next cycle only fills it in.</p>
   <div class="cta">
-    <span class="btn">Approve cycle 13</span>
-    <span class="btn secondary">Request the raw frames</span>
+    <span class="btn"><i data-lucide="check" class="b-ic"></i>Approve cycle 13</span>
+    <span class="btn secondary"><i data-lucide="download" class="b-ic"></i>Request the raw frames</span>
   </div>
   <div class="footer">Survey Directorate &middot; End of brief</div>
 </section>
