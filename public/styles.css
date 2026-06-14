@@ -175,6 +175,11 @@ a { color: var(--wp-link); }
 
 .btn { display: inline-flex; align-items: center; gap: 8px; font-family: var(--um-font-sans); font-size: 13px; font-weight: 550; border-radius: var(--um-r-md); padding: 8px 13px; cursor: pointer; border: 1px solid transparent; white-space: nowrap; transition: background var(--um-dur-fast), border-color var(--um-dur-fast), transform var(--um-dur-base) var(--um-ease-spring), color var(--um-dur-fast); }
 .btn:active { transform: scale(0.97); }
+/* Generic disabled state — primary has its own below, but ghost/quiet
+   buttons (e.g. a run-locked Edit) need a clear dimmed, no-go look. */
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn:disabled:active { transform: none; }
+.btn-ghost:disabled:hover { color: var(--wp-fg-muted); background: transparent; border-color: var(--wp-border); }
 .btn .wp-ic { width: 15px; height: 15px; }
 .btn-primary { background: var(--wp-accent); color: #1a0a03; font-weight: 650; }
 .btn-primary:hover { background: var(--wp-accent-soft); }
