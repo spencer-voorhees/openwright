@@ -1425,7 +1425,7 @@ function FilesPanel({ ws, files, notes, generations, artifacts, activeArtifactId
             onOpen={(g) => onActivate(g.id)}
             onRefresh={onChange}
             onRunStarted={(genId) => { if (genId) onActivate(genId); onOpenAgent(); }} />
-        ) : (
+        ) : artifacts.length === 0 ? (
           <div className="dropzone" style={{ borderStyle: "solid" }}>
             <div className="dz-title">No artifacts yet</div>
             <div className="dz-sub">
@@ -1435,6 +1435,22 @@ function FilesPanel({ ws, files, notes, generations, artifacts, activeArtifactId
             </div>
             <button className="btn btn-primary" style={{ marginTop: 14 }} onClick={onNewArtifact}>
               <Icon name="plus" /> Create your first artifact
+            </button>
+          </div>
+        ) : (
+          // The workspace already has artifacts; this one just has no
+          // built version yet — point at Generate, not "create another".
+          <div className="dropzone" style={{ borderStyle: "solid" }}>
+            <div className="dz-title">Nothing built yet</div>
+            <div className="dz-sub">
+              Add a prompt in the agent panel and hit
+              <strong style={{ color: "var(--wp-fg)" }}> Generate</strong> to build
+              {" "}{artifacts.find((a) => a.id === activeArtifactId)?.name
+                ? `“${artifacts.find((a) => a.id === activeArtifactId).name}”`
+                : "this artifact"}.
+            </div>
+            <button className="btn btn-primary" style={{ marginTop: 14 }} onClick={onOpenAgent}>
+              <Icon name="bot" /> Open the agent
             </button>
           </div>
         )}
