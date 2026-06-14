@@ -1,4 +1,4 @@
-/* v4 */
+/* v5 */
 /* ============================================================
    Oneshot — Document
    The document sibling of Oneshot. Same export-lossless promise,
@@ -218,7 +218,7 @@ th, td {
   text-align: left; padding: 10px 14px;
   border-bottom: 1px solid var(--border);
   vertical-align: top;
-  overflow-wrap: break-word; word-break: break-word;
+  overflow-wrap: break-word;
 }
 thead th {
   font-size: var(--type-eyebrow);
@@ -233,6 +233,7 @@ thead th {
   font-size: var(--type-eyebrow); font-weight: 600;
   padding: 3px 11px; border-radius: 999px;
   border: 1px solid var(--border); color: var(--fg-muted);
+  white-space: nowrap;   /* never shatter the label in a narrow table cell */
 }
 .pill.accent    { color: var(--accent); border-color: var(--accent-tint); background: var(--accent-wash); }
 .pill.available { color: var(--st-available); border-color: #BFE3C9; }
