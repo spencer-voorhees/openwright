@@ -119,6 +119,7 @@ addColumnIfMissing("workspaces",  "theme",               "TEXT NOT NULL DEFAULT 
 // BYOA: which agent adapter runs this workspace's generations.
 addColumnIfMissing("workspaces",  "agent_engine",        "TEXT NOT NULL DEFAULT 'claude'");
 addColumnIfMissing("workspaces",  "agent_model",         "TEXT NOT NULL DEFAULT ''");
+addColumnIfMissing("design_systems", "builtin",           "INTEGER NOT NULL DEFAULT 0");
 // Authoring persona — drives the AGENT's writing voice. Default is
 // terse/technical; users can swap to executive-summary, detailed, or
 // mixed-audience via the workspace settings panel. Persona text gets
@@ -198,12 +199,15 @@ function seedBuiltinDesignSystems() {
     catch { continue; }
     const existing = db.query("SELECT id, css FROM design_systems WHERE slug = ?").get(b.slug) as any;
     if (!existing) {
-      db.run("INSERT INTO design_systems(name, slug, css, description, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?)",
+      db.run("INSERT INTO design_systems(name, slug, css, description, builtin, created_at, updated_at) VALUES(?, ?, ?, ?, 1, ?, ?)",
         [b.name, b.slug, css, b.description, now, now]);
       continue;
     }
+    // Always re-assert the builtin flag (cheap, idempotent) so existing
+    // rows from before this column existed get marked read-only.
+    db.run("UPDATE design_systems SET builtin = 1 WHERE slug = ?", [b.slug]);
     if (bundledVersion(css) > bundledVersion(existing.css || "")) {
-      db.run("UPDATE design_systems SET name = ?, css = ?, description = ?, updated_at = ? WHERE slug = ?",
+      db.run("UPDATE design_systems SET name = ?, css = ?, description = ?, builtin = 1, updated_at = ? WHERE slug = ?",
         [b.name, css, b.description, now, b.slug]);
     }
   }

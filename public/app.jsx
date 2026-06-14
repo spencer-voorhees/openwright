@@ -2491,6 +2491,9 @@ function DesignSystemEditor({ systemId, onBack, onChange }) {
   const [saving, setSaving] = useState(false);
   const [previewKey, setPreviewKey] = useState(0);
   const [editing, setEditing] = useState(false);   // false = preview only (default)
+  // What the preview pane shows: the token spec sheet (default) or a
+  // worked example. Pure display — no effect on the system itself.
+  const [view, setView] = useState("specimen");
 
   const load = useCallback(async () => {
     const d = await fetchJson(`/api/design-systems/${systemId}`);
@@ -2514,6 +2517,8 @@ function DesignSystemEditor({ systemId, onBack, onChange }) {
     } finally { setSaving(false); }
   };
 
+  const builtin = !!data?.builtin;
+
   const remove = async () => {
     if (!data) return;
     if (!confirm(`Delete design system "${data.name}"? Workspaces referencing it must switch first.`)) return;
@@ -2526,7 +2531,7 @@ function DesignSystemEditor({ systemId, onBack, onChange }) {
   if (!data) return <div className="ws-main"><div className="empty">loading…</div></div>;
 
   // Live preview URL: bust cache when CSS is dirty + after save.
-  const previewUrl = `/preview/__design-system-preview/${systemId}.html?v=${previewKey}`;
+  const previewUrl = `/preview/__design-system-preview/${systemId}.html?v=${previewKey}${view === "specimen" ? "&mode=specimen" : ""}`;
 
   return (
     <div className="ds-editor">
@@ -2535,26 +2540,46 @@ function DesignSystemEditor({ systemId, onBack, onChange }) {
           <Icon name="arrow-left" />
         </button>
         <div className="ds-title-block">
-          <input className="ds-name-input" value={name}
+          <input className="ds-name-input" value={name} readOnly={builtin}
                  onChange={(e) => { setName(e.target.value); setDirty(true); }} />
           <input className="ds-desc-input" placeholder="One-line description"
-                 value={description}
+                 value={description} readOnly={builtin}
                  onChange={(e) => { setDescription(e.target.value); setDirty(true); }} />
         </div>
         <div className="ds-editor-actions">
-          {dirty && <span className="eyebrow" style={{ color: "var(--wp-warn)" }}>unsaved</span>}
-          <button className={"btn" + (editing ? " btn-primary" : " btn-ghost")}
-                  onClick={() => setEditing((e) => !e)}
-                  title={editing ? "Hide CSS editor (preview only)" : "Show CSS editor alongside preview"}>
-            <Icon name="code" /> {editing ? "Hide editor" : "Edit CSS"}
-          </button>
-          <button className="btn btn-ghost" onClick={remove}
-                  title="Delete this design system">
-            <Icon name="trash-2" />
-          </button>
-          <button className="btn btn-primary" onClick={save} disabled={!dirty || saving}>
-            <Icon name="save" /> {saving ? "saving…" : "Save"}
-          </button>
+          <div className="ds-view-seg">
+            <button className={view === "specimen" ? "on" : ""}
+                    onClick={() => setView("specimen")}
+                    title="Tokens, type scale, and components from this system's CSS">
+              <Icon name="layout-list" /> Specimen
+            </button>
+            <button className={view === "example" ? "on" : ""}
+                    onClick={() => setView("example")}
+                    title="A worked example deck rendered in this system">
+              <Icon name="presentation" /> Example
+            </button>
+          </div>
+          {builtin ? (
+            <span className="ds-readonly" title="Built-in baseline — immutable in the app">
+              <Icon name="lock" /> Built-in
+            </span>
+          ) : (
+            <>
+              {dirty && <span className="eyebrow" style={{ color: "var(--wp-warn)" }}>unsaved</span>}
+              <button className={"btn" + (editing ? " btn-primary" : " btn-ghost")}
+                      onClick={() => setEditing((e) => !e)}
+                      title={editing ? "Hide CSS editor (preview only)" : "Show CSS editor alongside preview"}>
+                <Icon name="code" /> {editing ? "Hide editor" : "Edit CSS"}
+              </button>
+              <button className="btn btn-ghost" onClick={remove}
+                      title="Delete this design system">
+                <Icon name="trash-2" />
+              </button>
+              <button className="btn btn-primary" onClick={save} disabled={!dirty || saving}>
+                <Icon name="save" /> {saving ? "saving…" : "Save"}
+              </button>
+            </>
+          )}
         </div>
       </div>
       <div className={"ds-editor-body" + (editing ? " is-editing" : " is-preview-only")}>
@@ -2567,7 +2592,7 @@ function DesignSystemEditor({ systemId, onBack, onChange }) {
           </div>
         )}
         <div className="ds-preview-pane">
-          <iframe key={previewKey} src={previewUrl}
+          <iframe key={`${previewKey}-${view}`} src={previewUrl}
                   title="Design system preview"
                   sandbox="allow-scripts allow-same-origin" />
         </div>

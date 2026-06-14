@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Design system showcase</title>
+<!-- The /preview/__design-system-preview/<id>.html server route rewrites
+     this link to /api/design-systems/<id>/css.css, so the showcase
+     renders with whichever system is being edited. -->
+<link rel="stylesheet" href="/html-engine/themes/__active__.css">
+<style>
+  /* Showcase layout — scrollable documentation page. Not a deck. Uses
+     the system's CSS variables so every example reflects the bound
+     system live. Mobile-friendly: container is max-width 1200px,
+     grids collapse on narrow viewports. */
+  body { margin: 0; padding: 0; min-height: 100vh; }
+  .page { max-width: 1200px; margin: 0 auto; padding: 48px 32px 96px; }
+  @media (max-width: 640px) { .page { padding: 32px 20px 64px; } }
+
+  .doc-head { padding: 24px 0 40px; border-bottom: 1px solid var(--border); margin-bottom: 48px; }
+  .doc-head .name {
+    font-family: var(--font-display); font-size: clamp(36px, 6vw, 64px);
+    font-weight: 700; margin: 0; color: var(--fg);
+    letter-spacing: var(--tracking-title, -0.01em); line-height: 1.05;
+  }
+  .doc-head .tagline {
+    margin-top: 12px; color: var(--fg-muted);
+    font-size: clamp(15px, 1.6vw, 19px); line-height: 1.5; max-width: 720px;
+  }
+
+  /* Section pattern */
+  section.doc { margin-bottom: 56px; }
+  section.doc > h2.section-title {
+    font-family: var(--font-display); font-size: clamp(22px, 2.8vw, 32px);
+    font-weight: 700; margin: 0 0 6px; color: var(--fg);
+    letter-spacing: 0;
+  }
+  section.doc > p.section-sub {
+    color: var(--fg-muted); font-size: 14px; margin: 0 0 24px; max-width: 720px; line-height: 1.5;
+  }
+
+  /* Generic helpers */
+  .row { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+  .col { display: flex; flex-direction: column; gap: 14px; }
+  .stack-sm { display: flex; flex-direction: column; gap: 8px; }
+  .grid { display: grid; gap: 16px; }
+  .grid.cols-2 { grid-template-columns: repeat(2, 1fr); }
+  .grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
+  .grid.cols-4 { grid-template-columns: repeat(4, 1fr); }
+  .grid.cols-auto { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+  @media (max-width: 720px) {
+    /* Palette swatches (cols-4) stay 2-up — simple enough to fit. But
+       content-heavy grids (cards = cols-3, forms = cols-2) go single
+       so cards don't overflow their cells. */
+    .grid.cols-4 { grid-template-columns: repeat(2, 1fr); }
+    .grid.cols-3, .grid.cols-2 { grid-template-columns: 1fr; }
+    .grid.cols-auto { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+    .swatch > .chip { height: 64px; }
+    /* Wide slide-scale tables scroll inside their own card instead of
+       widening the whole page. */
+    .deck-table { display: block; width: 100%; max-width: 100%; overflow-x: auto; }
+  }
+
+  /* Swatch card */
+  .swatch {
+    border-radius: var(--r-md, 8px);
+    border: 1px solid var(--border, rgba(0,0,0,.1));
+    overflow: hidden; display: flex; flex-direction: column;
+    background: var(--bg, white);
+  }
+  .swatch > .chip { height: 90px; }
+  .swatch > .meta {
+    padding: 12px 14px; display: flex; flex-direction: column; gap: 2px;
+    border-top: 1px solid var(--border, rgba(0,0,0,.06));
+  }
+  .swatch .name { font-size: 13px; font-weight: 600; color: var(--fg); }
+  .swatch .hex { font-family: var(--font-mono); font-size: 12px; color: var(--fg-muted); }
+
+  /* Form demo: stack label above field, fields full width. The
+     system styles the controls (border, padding, color); the showcase
+     just lays them out as a conventional form. */
+  .spec-form .spec-field { display: flex; flex-direction: column; align-items: stretch; }
+  .spec-form .label { display: block; margin-bottom: 7px; }
+  .spec-form .input, .spec-form .select, .spec-form .textarea { display: block; width: 100%; box-sizing: border-box; }
+  .spec-form .textarea { min-height: 84px; resize: vertical; }
+  .spec-form .help { margin-top: 6px; }
+
+  /* Type scale row */
+  .type-row { display: grid; grid-template-columns: 120px 1fr; gap: 18px; align-items: baseline; padding: 12px 0; border-bottom: 1px dashed var(--border); }
+  .type-row .label-col { font-family: var(--font-mono); font-size: 12px; color: var(--fg-muted); text-transform: uppercase; letter-spacing: 0.08em; }
+  @media (max-width: 640px) {
+    .type-row { grid-template-columns: 1fr; gap: 4px; }
+    /* Slide-scale type can't fit a phone, so cap the oversized tiers
+       while preserving the descending hierarchy — the labels name each
+       tier exactly. Body and below already fit. */
+    .type-row .display { font-size: clamp(28px, 7.5vw, 36px) !important; line-height: 1.1 !important; }
+    .type-row h1 { font-size: clamp(23px, 6vw, 29px) !important; line-height: 1.15 !important; }
+    .type-row h2 { font-size: clamp(19px, 5vw, 24px) !important; line-height: 1.2 !important; }
+    .type-row h3 { font-size: clamp(16px, 4.2vw, 20px) !important; line-height: 1.25 !important; }
+    .type-row .lede, .type-row p { font-size: clamp(14px, 3.6vw, 16px) !important; }
+  }
+
+  /* Inline demo wrapper — adds a soft container around demo items so
+     small components don't float in space awkwardly. */
+  .demo {
+    padding: 18px;
+    border: 1px dashed var(--border, rgba(0,0,0,.1));
+    border-radius: var(--r-md, 8px);
+    background: var(--bg-soft, transparent);
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Header — pulls the system name from the CSS variable. -->
+  <div class="doc-head">
+    <h1 class="name" id="ds-name">Design system</h1>
+    <p class="tagline">Live reference for every token, component, and pattern this system provides. Scroll through to verify a CSS change before shipping it — anything that looks wrong below is something a deck might depend on.</p>
+  </div>
+
+  <!-- 1. Typography -->
+  <section class="doc">
+    <h2 class="section-title">Typography</h2>
+    <p class="section-sub">Hierarchy from oversized display through monospace metadata. Authored sizes are slide-scale; large tiers are scaled to fit on small screens.</p>
+    <div class="type-row"><span class="label-col">Display</span><div class="display">Aa Eg 14 — Display</div></div>
+    <div class="type-row"><span class="label-col">H1 / Title</span><h1 style="margin: 0;">A title that anchors a slide</h1></div>
+    <div class="type-row"><span class="label-col">H2</span><h2 style="margin: 0;">A heading that opens a section</h2></div>
+    <div class="type-row"><span class="label-col">H3</span><h3 style="margin: 0;">A subhead for a card</h3></div>
+    <div class="type-row"><span class="label-col">Body</span><p style="margin: 0;">Body text — readable at presentation distance. Line height keeps the rhythm calm without feeling loose.</p></div>
+    <div class="type-row"><span class="label-col">Small</span><span class="small">Caption text — used for credits, metadata, axis labels.</span></div>
+    <div class="type-row"><span class="label-col">Mono</span><span class="mono">CONST API_KEY = 0xDEADBEEF</span></div>
+    <div class="type-row"><span class="label-col">Eyebrow</span><span class="eyebrow">section · category</span></div>
+  </section>
+
+  <!-- 2. Palette -->
+  <section class="doc">
+    <h2 class="section-title">Palette</h2>
+    <p class="section-sub">Background and surface tokens on top, foreground and accent on bottom. Status colors round it out.</p>
+    <div class="grid cols-4">
+      <div class="swatch"><div class="chip" style="background: var(--bg);"></div>
+        <div class="meta"><span class="name">Background</span><span class="hex">--bg</span></div></div>
+      <div class="swatch"><div class="chip" style="background: var(--bg-soft);"></div>
+        <div class="meta"><span class="name">Surface</span><span class="hex">--bg-soft</span></div></div>
+      <div class="swatch"><div class="chip" style="background: var(--bg-deep);"></div>
+        <div class="meta"><span class="name">Deep</span><span class="hex">--bg-deep</span></div></div>
+      <div class="swatch"><div class="chip" style="background: var(--accent);"></div>
+        <div class="meta"><span class="name">Accent</span><span class="hex">--accent</span></div></div>
+      <div class="swatch"><div class="chip" style="background: var(--fg);"></div>
+        <div class="meta"><span class="name">Foreground</span><span class="hex">--fg</span></div></div>
+      <div class="swatch"><div class="chip" style="background: var(--fg-muted);"></div>
+        <div class="meta"><span class="name">Muted</span><span class="hex">--fg-muted</span></div></div>
+      <div class="swatch"><div class="chip" style="background: var(--st-available);"></div>
+        <div class="meta"><span class="name">Available</span><span class="hex">--st-available</span></div></div>
+      <div class="swatch"><div class="chip" style="background: var(--st-gated);"></div>
+        <div class="meta"><span class="name">Gated</span><span class="hex">--st-gated</span></div></div>
+    </div>
+  </section>
+
+  <!-- 3. Buttons -->
+  <section class="doc">
+    <h2 class="section-title">Buttons</h2>
+        <p class="section-sub">Primary for the main action, secondary as the outlined alternate, quiet for low-emphasis or inline use.</p>
+    <div class="demo">
+      <div class="row">
+        <button class="btn">Primary</button>
+        <button class="btn secondary">Secondary</button>
+        <button class="btn quiet">Quiet</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. Inputs / forms -->
+  <section class="doc">
+    <h2 class="section-title">Form elements</h2>
+    <p class="section-sub">Inputs, textareas, selects, plus the label + help text pattern. Focus state highlights with the accent color.</p>
+    <div class="demo spec-form">
+      <div class="grid cols-2">
+        <div class="spec-field">
+          <label class="label">Project name</label>
+          <input class="input" placeholder="e.g. q4-renewal-narrative">
+          <div class="help">Lowercase, hyphen-separated</div>
+        </div>
+        <div class="spec-field">
+          <label class="label">Owner</label>
+          <select class="select">
+            <option>HAL 9000</option>
+            <option>R2-D2</option>
+          </select>
+        </div>
+        <div class="spec-field" style="grid-column: 1 / -1;">
+          <label class="label">Brief</label>
+          <textarea class="textarea" placeholder="A few sentences on intent and audience…"></textarea>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5. Toggles, checkboxes, radios -->
+  <section class="doc">
+    <h2 class="section-title">Controls</h2>
+    <p class="section-sub">Switch, checkbox, and radio in both states.</p>
+    <div class="demo">
+      <div class="row" style="gap: 32px;">
+        <div class="col" style="gap: 10px;">
+          <span class="label">Switch</span>
+          <div class="row" style="gap: 16px;">
+            <span class="switch"></span>
+            <span class="switch on"></span>
+          </div>
+        </div>
+        <div class="col" style="gap: 10px;">
+          <span class="label">Checkbox</span>
+          <div class="row" style="gap: 16px;">
+            <span class="checkbox"></span>
+            <span class="checkbox on"></span>
+          </div>
+        </div>
+        <div class="col" style="gap: 10px;">
+          <span class="label">Radio</span>
+          <div class="row" style="gap: 16px;">
+            <span class="radio"></span>
+            <span class="radio on"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6. Pills, dots, badges -->
+  <section class="doc">
+    <h2 class="section-title">Status & badges</h2>
+    <p class="section-sub">Pills carry status labels; dots are inline markers; badges sit on counters.</p>
+    <div class="demo">
+      <div class="row" style="gap: 12px; flex-wrap: wrap;">
+        <span class="pill"><span class="dot"></span>Neutral</span>
+        <span class="pill accent">Accent</span>
+        <span class="pill available"><span class="dot available"></span>Available</span>
+        <span class="pill gated"><span class="dot gated"></span>Gated</span>
+        <span class="pill parked"><span class="dot parked"></span>Parked</span>
+      </div>
+      <div class="row" style="gap: 28px; margin-top: 18px; align-items: center;">
+        <div class="row" style="gap: 10px;">
+          <span class="badge">4</span>
+          <span class="badge">12</span>
+          <span class="badge neutral">0</span>
+        </div>
+        <div class="row" style="gap: 10px;">
+          <span class="avatar">SV</span>
+          <span class="avatar" style="background: var(--bg-soft); color: var(--fg);">KD</span>
+          <span class="avatar" style="background: var(--bg-deep); color: var(--fg-muted);">MS</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7. Alerts -->
+  <section class="doc">
+    <h2 class="section-title">Alerts</h2>
+    <p class="section-sub">Inline information, success, warning, error. Use sparingly — one per slide max.</p>
+    <div class="demo col">
+      <div class="alert info"><strong>Info.</strong> Exports run from the same HTML source as the live preview.</div>
+      <div class="alert warn"><strong>Warning.</strong> Slide 14 has 9 rows in a table — close to the readable limit.</div>
+      <div class="alert negative"><strong>Error.</strong> Chrome headless timed out rendering the export PDF.</div>
+    </div>
+  </section>
+
+  <!-- 8. Progress -->
+  <section class="doc">
+    <h2 class="section-title">Progress</h2>
+    <p class="section-sub">Linear progress bars, sized to fit any inline use.</p>
+    <div class="demo col" style="max-width: 480px;">
+      <div class="progress"><div class="fill" style="width: 28%;"></div></div>
+      <div class="progress"><div class="fill" style="width: 62%;"></div></div>
+      <div class="progress"><div class="fill" style="width: 100%;"></div></div>
+    </div>
+  </section>
+
+  <!-- 9. Cards -->
+  <section class="doc">
+    <h2 class="section-title">Cards</h2>
+    <p class="section-sub">Default, tint, and soft variants — containers for grouped content.</p>
+    <div class="grid cols-3">
+      <div class="card">
+        <h3>Default</h3>
+        <p>The standard container. Subtle border and surface fill.</p>
+      </div>
+      <div class="card tint">
+        <h3>Tint</h3>
+        <p>An accent-washed fill for the emphasized or highlighted item.</p>
+      </div>
+      <div class="card soft">
+        <h3>Soft</h3>
+        <p>Lower contrast — a quiet frame around grouped text or items.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 10. Tables -->
+  <section class="doc">
+    <h2 class="section-title">Tables</h2>
+    <p class="section-sub">Comparative rows with status dots, emphasis, and color-coded values.</p>
+    <table class="deck-table">
+      <thead>
+        <tr><th>Item</th><th>Status</th><th>Detail</th><th>Level</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><span class="row" style="gap: 12px;"><span class="dot available"></span><strong>Option Alpha</strong></span></td><td>Active</td><td>Ready to use</td><td><span style="color: var(--st-available); font-weight: 600;">High</span></td></tr>
+        <tr><td><span class="row" style="gap: 12px;"><span class="dot gated"></span><strong>Option Beta</strong></span></td><td>Pending</td><td>Needs review</td><td><span style="color: var(--st-gated); font-weight: 600;">Medium</span></td></tr>
+        <tr><td><span class="row" style="gap: 12px;"><span class="dot parked"></span><strong>Option Gamma</strong></span></td><td>Paused</td><td>Not started</td><td><span style="color: var(--st-parked);">Low</span></td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- 11. Lists -->
+  <section class="doc">
+    <h2 class="section-title">Lists</h2>
+    <p class="section-sub">Bulleted and numbered. Marker style is system-specific.</p>
+    <div class="grid cols-2">
+      <ul class="bullets">
+        <li>One declarative claim per item.</li>
+        <li>Lines wrap with a consistent hanging indent.</li>
+        <li>The marker is a CSS pseudo-element, not a positioned glyph.</li>
+      </ul>
+      <ol class="numbered">
+        <li>Capture the workspace inputs.</li>
+        <li>Draft the deck.</li>
+        <li>Review and refine.</li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- 12. Quote -->
+  <section class="doc">
+    <h2 class="section-title">Quote</h2>
+    <p class="section-sub">Pull-quote treatment. Use once per deck, not as a recurring layout.</p>
+    <blockquote class="quote">A design system is a contract between the people who write it and the people who use it.</blockquote>
+  </section>
+
+  <!-- 13. Code -->
+  <section class="doc">
+    <h2 class="section-title">Code</h2>
+    <p class="section-sub">Monospace block for short technical reference.</p>
+    <pre class="code">/* Reference these tokens, never hardcode */
+:root {
+  --bg:      var(--paper);
+  --fg:      var(--ink);
+  --accent:  #0071E3;
+  --type-body: 26px;
+}
+.card { background: var(--bg-soft); border-radius: var(--r-lg); }</pre>
+  </section>
+
+</div>
+
+<script>
+  // Read the system name from the CSS --system-name var so the doc
+  // head shows the right title even when the link is swapped.
+  document.addEventListener('DOMContentLoaded', () => {
+    const v = getComputedStyle(document.documentElement).getPropertyValue('--system-name').trim().replace(/^["']|["']$/g, '');
+    if (v) document.getElementById('ds-name').textContent = v;
+  });
+</script>
+</body>
+</html>

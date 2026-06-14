@@ -170,7 +170,7 @@ const KNOWN_PERSONAS = new Set(["terse-technical", "executive", "detailed", "mix
 
 async function listDesignSystems() {
   const rows = db.query(
-    `SELECT id, name, slug, description, length(css) as css_size, created_at, updated_at
+    `SELECT id, name, slug, description, builtin, length(css) as css_size, created_at, updated_at
      FROM design_systems ORDER BY id ASC`).all();
   return json({ design_systems: rows });
 }
@@ -214,6 +214,7 @@ async function createDesignSystem(req: Request) {
 async function updateDesignSystem(id: string, req: Request) {
   const row = db.query("SELECT * FROM design_systems WHERE id = ?").get(id) as any;
   if (!row) return err("not found", 404);
+  if (row.builtin) return err("built-in design systems are read-only", 403);
   const body = await req.json() as { name?: string; css?: string; description?: string };
   const sets: string[] = [];
   const vals: any[] = [];
@@ -230,6 +231,7 @@ async function updateDesignSystem(id: string, req: Request) {
 async function deleteDesignSystem(id: string) {
   const row = db.query("SELECT * FROM design_systems WHERE id = ?").get(id) as any;
   if (!row) return err("not found", 404);
+  if (row.builtin) return err("built-in design systems can't be deleted", 403);
   // Don't allow deleting a system that's currently in use unless the
   // caller passes ?force=1 — protects against accidental link-breakage.
   const inUse = db.query("SELECT COUNT(*) AS c FROM workspaces WHERE design_system_id = ?").get(row.id) as any;
@@ -1075,11 +1077,12 @@ Bun.serve({
       // color swatches, every slide pattern, component examples — so the
       // editor preview surfaces what the system actually covers, not
       // just a 3-slide sample.
-      const showcasePath = join(import.meta.dir, "..", "html-engine", "examples", "sample.html");
-      const fallback     = join(import.meta.dir, "..", "html-engine", "examples", "sample.html");
-      const sourcePath = existsSync(showcasePath) ? showcasePath : fallback;
+      // mode=specimen → the token spec sheet; otherwise the example deck.
+      const mode = url.searchParams.get("mode");
+      const file = mode === "specimen" ? "showcase.html" : "sample.html";
+      const sourcePath = join(import.meta.dir, "..", "html-engine", "examples", file);
       if (!existsSync(sourcePath)) {
-        return new Response("showcase / sample not found", { status: 404 });
+        return new Response(`${file} not found`, { status: 404 });
       }
       const sample = readFileSync(sourcePath, "utf-8");
       // Swap the static themes/<x>.css link for the live design system CSS.

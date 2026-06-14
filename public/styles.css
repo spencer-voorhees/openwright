@@ -1363,3 +1363,18 @@ select option { background-color: #161618; color: #f5f5f7; }
 }
 .msg-error svg { width: 15px; height: 15px; flex: none; margin-top: 2px; }
 .msg-error .agent-text { color: inherit; }
+
+/* Specimen / Example toggle in the design-system editor head */
+.ds-view-seg { display: inline-flex; background: var(--wp-elev); border: 1px solid var(--wp-border); border-radius: 999px; padding: 2px; }
+.ds-view-seg button {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: none; background: transparent; color: var(--wp-fg-muted);
+  font-size: 12.5px; font-weight: 600; padding: 5px 12px; border-radius: 999px; cursor: pointer;
+}
+.ds-view-seg button.on { background: var(--wp-elev-2); color: var(--wp-fg); }
+.ds-view-seg button svg { width: 13px; height: 13px; }
+@media (max-width: 760px) { .ds-view-seg button span { display: none; } }
+
+/* Built-in (immutable) marker in the design-system head */
+.ds-readonly { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--wp-fg-faint); border: 1px solid var(--wp-border); border-radius: 999px; padding: 5px 11px; }
+.ds-readonly svg { width: 13px; height: 13px; }
