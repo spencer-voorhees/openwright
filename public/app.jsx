@@ -2703,7 +2703,7 @@ function DesignSystemEditor({ systemId, onBack, onChange }) {
             <button className={view === "example" ? "on" : ""}
                     onClick={() => setView("example")}
                     title="Worked examples rendered in this system">
-              <Icon name="presentation" /> Examples
+              <Icon name="gallery-horizontal-end" /> Examples
             </button>
           </div>
           {view === "example" && hasDoc && (

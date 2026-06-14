@@ -4,74 +4,124 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>html-engine sample document</title>
-<link rel="stylesheet" href="/html-engine/themes/__active__.css">
 <style>
-  /* The document example links the live design system CSS above; this
+  /* The document example links the live design system CSS below; this
      block only neutralizes the host page chrome so the .doc-page sits
      on its own. Everything visual comes from the system. */
   body { margin: 0; }
 </style>
+<link rel="stylesheet" href="/html-engine/themes/__active__.css">
 </head>
 <body>
   <article class="doc-page">
-    <p class="eyebrow">Deep Field Report &middot; Systems</p>
+    <p class="eyebrow">Deep Field Report &middot; Veridia System</p>
     <h1>The Helios Survey</h1>
-    <p class="lede">How a deep-space probe charts an uncharted star system in a single orbital pass, and what the design choices behind that pass reveal about working under tight constraints.</p>
+    <p class="lede">How a deep-space probe charts an uncharted star system in a single orbital pass, what that pass found, and what it deliberately left for the next cycle.</p>
     <div class="doc-meta">
       <span>Survey Directorate</span>
       <span>Cycle 12</span>
+      <span>Clearance: Standing Committee</span>
       <span>9 min read</span>
     </div>
 
-    <p>A document is a different instrument than a slide. Where a deck pares each idea to a single frame, a document lets an argument <strong>breathe across paragraphs</strong> — context, claim, evidence, and consequence in their natural order. The system you are reading sets that prose at a comfortable measure and leading, so a long passage stays legible from the first line to the last.</p>
+    <p>A document is a different instrument than a slide. Where a deck pares each idea to a single frame, a report lets an argument <strong>breathe across paragraphs</strong> &mdash; context, claim, evidence, and consequence in their natural order. The system you are reading sets that prose at a comfortable measure and leading, so a long passage stays legible from the first line to the last.</p>
 
-    <p>The running text carries the weight. Inline emphasis is deliberate and rare: <em>italics</em> for a coined term, <strong>bold</strong> for the one phrase a skimming reader must not miss, and <code>monospace</code> for anything read verbatim off an instrument.</p>
-
-    <h2>What the survey covers</h2>
-    <p>The brief is organized the way the pass itself proceeds — outward from the inner orbit, one shell at a time. Each section stands on its own, but the order is the argument.</p>
-    <ul>
-      <li>The approach: why a single pass beats repeated partial sweeps.</li>
-      <li>The instruments: what each sensor array contributes, and where they overlap.</li>
-      <li>The trade-offs: what a one-pass survey gives up, stated plainly.</li>
-    </ul>
-
-    <h3>A note on method</h3>
-    <p>Numbered steps describe a procedure that must happen in order; bulleted lists describe a set whose order does not matter. The distinction is small and worth keeping.</p>
-    <ol>
-      <li>Fix the probe against two known stars.</li>
-      <li>Open every sensor array and hold a constant burn.</li>
-      <li>Let the map assemble itself from the overlap.</li>
-    </ol>
-
-    <blockquote>A survey flown in one pass is honest about its blind spots. One stitched from many is only as honest as its stitching.</blockquote>
+    <h2>Executive summary</h2>
+    <p>The Helios probe reached Veridia with fuel for a single transit. In one continuous sweep from the inner orbit to the outer dark it returned a fused, survey-grade map of the inner system, a partial read of the debris belt, and a low-resolution gravimetric sketch of everything beyond. The headline is not the coverage number. It is that the survey is <em>honest</em> about exactly where its confidence ends.</p>
 
     <div class="alert info">
-      <strong>Context.</strong> Callouts pull an aside out of the running text without breaking its flow — a definition, a caveat, a pointer to deeper material.
-    </div>
-    <div class="alert warn">
-      <strong>Watch for.</strong> Anything that depends on layout the page cannot guarantee — floated figures, fixed columns — will not survive the trip to an editable document.
-    </div>
-    <div class="alert negative">
-      <strong>Avoid.</strong> Burying the single most important sentence in the middle of a long paragraph. If it matters most, give it its own line.
+      <strong>Key finding.</strong> Two candidate bodies in the mid belt show spectral signatures consistent with water ice. They are candidates, not confirmations &mdash; the belt was read at medium resolution on a single pass.
     </div>
 
-    <h2>Coverage at a glance</h2>
-    <p>Tables earn their place when the reader needs to compare across a fixed set of dimensions. Keep them narrow enough to read without scrolling sideways.</p>
+    <h2>The approach</h2>
+    <p>There was no second approach, no loiter, and no return burn to re-image a shell we rushed. That constraint shaped every decision below it.</p>
+
+    <h3>Why a single pass</h3>
+    <p>Repeated sweeps hide their gaps in the overlap; coverage looks high while confidence quietly is not. One clean pass trades raw coverage for a single coordinate frame and a clear, honest boundary where resolution falls off. The reasons, in order of weight:</p>
+    <ul class="bullets">
+      <li>One coordinate frame across the whole system &mdash; no seams to reconcile later.</li>
+      <li>No fuel or schedule spent on return burns that mostly re-image known ground.</li>
+      <li>A boundary the next cycle can target precisely instead of guessing at.</li>
+    </ul>
+
+    <h3>Method</h3>
+    <p>The pass followed a fixed procedure. The order matters &mdash; each step depends on the one before it.</p>
+    <ol>
+      <li>Fix the probe's position against two reference stars.</li>
+      <li>Open every sensor array and hold a constant burn through the system.</li>
+      <li>Let the map assemble itself from the overlap, shell by shell.</li>
+      <li>Re-fix position before any maneuver call, to bound accumulated drift.</li>
+    </ol>
+
+    <blockquote>A survey flown in one pass is honest about its blind spots. One stitched together from many is only ever as honest as its stitching.</blockquote>
+
+    <h2>The instruments</h2>
+    <p>Three sensor arrays carried the survey, each tuned to a different shell and a different question. Where their ranges overlap, the fused map is strongest; where only one reads, it is exactly as strong as that one array.</p>
     <table>
       <thead>
-        <tr><th>Shell</th><th>Instrument</th><th>Resolution</th><th>Status</th></tr>
+        <tr><th>Array</th><th>Shell</th><th>Resolution</th><th>Status</th></tr>
       </thead>
       <tbody>
-        <tr><td>Inner orbit</td><td>Optical sweep</td><td>High</td><td><span class="pill available"><span class="dot available"></span>Complete</span></td></tr>
-        <tr><td>Mid belt</td><td>Spectral array</td><td>Medium</td><td><span class="pill gated"><span class="dot gated"></span>Partial</span></td></tr>
-        <tr><td>Outer dark</td><td>Gravimetric</td><td>Low</td><td><span class="pill parked"><span class="dot parked"></span>Queued</span></td></tr>
+        <tr><td><strong>Optical sweep</strong></td><td>Inner orbit</td><td>High</td><td><span class="pill available"><span class="dot available"></span>Complete</span></td></tr>
+        <tr><td><strong>Spectral array</strong></td><td>Mid belt</td><td>Medium</td><td><span class="pill gated"><span class="dot gated"></span>Partial</span></td></tr>
+        <tr><td><strong>Gravimetric</strong></td><td>Outer dark</td><td>Low</td><td><span class="pill parked"><span class="dot parked"></span>Queued</span></td></tr>
       </tbody>
     </table>
 
+    <h2>Coverage</h2>
+    <p>Coverage is reported per shell, not as a single system figure, because a single number would average away precisely the distinction that matters: the inner orbit is a survey, the outer dark is a sketch.</p>
+    <table>
+      <thead>
+        <tr><th>Shell</th><th>Coverage</th><th>Grade</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Inner orbit</td><td>96%</td><td>Survey</td></tr>
+        <tr><td>Mid belt</td><td>61%</td><td>Reconnaissance</td></tr>
+        <tr><td>Outer dark</td><td>18%</td><td>Sketch</td></tr>
+      </tbody>
+    </table>
+    <div class="alert warn">
+      <strong>Read with care.</strong> Position error grows the further the probe travels from its reference stars. Outer-dark coordinates carry the widest uncertainty and should be treated as approximate.
+    </div>
+
+    <h2>Findings</h2>
+    <p>The inner orbit returned cleanly and needs no caveats. The interesting, and more delicate, results are further out.</p>
+    <ul class="bullets">
+      <li>Four inner planets resolved at survey grade; orbits and masses are firm.</li>
+      <li>The debris belt is denser than modeled, with two ice candidates noted above.</li>
+      <li>A gravimetric anomaly in the outer dark suggests an unseen body; resolution is too low to call it.</li>
+    </ul>
+    <p>The anomaly is logged in the telemetry under a provisional tag, pending a higher-resolution pass:</p>
+    <pre>OBJ-OD-0007   grav_anomaly   conf=low   shell=outer_dark
+              dr=0.04 AU      grade=sketch   action=defer</pre>
+
+    <h2>Risks and limits</h2>
+    <div class="alert negative">
+      <strong>Do not act on the outer shell alone.</strong> No follow-up burn should be tasked off outer-dark data by itself &mdash; it has not cleared survey grade, and a maneuver planned against a sketch can miss by more than the sketch can see.
+    </div>
+    <p>Everything the survey is unsure of, it says so plainly and in place. That is the discipline a single pass buys: the map and its blind spots arrive together, in the same frame, so no one downstream mistakes a sketch for a survey.</p>
+
+    <h2>Recommendations</h2>
+    <ol>
+      <li>Approve a targeted cycle&nbsp;13 pass over the outer dark to resolve <code>OBJ-OD-0007</code>.</li>
+      <li>Release the inner-orbit survey to the cartography group now &mdash; it is final.</li>
+      <li>Hold the belt ice candidates as provisional until a medium-or-better re-read.</li>
+    </ol>
+
     <hr>
 
-    <h2>The trade-off, stated plainly</h2>
-    <p>A single pass trades depth for coverage. The inner orbit is crisp; the outer dark is a sketch the next cycle will sharpen. That is the honest shape of the work, and a document is the right instrument for saying so — at length, in order, and without pretending the blind spots are not there.</p>
+    <h2>Appendix: signal grades</h2>
+    <p>The grades used throughout this report map to fixed coverage and confidence bands.</p>
+    <table>
+      <thead>
+        <tr><th>Grade</th><th>Coverage</th><th>Use</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Survey</td><td>&ge; 90%</td><td>Safe to plan maneuvers against.</td></tr>
+        <tr><td>Reconnaissance</td><td>40&ndash;89%</td><td>Directional; confirm before acting.</td></tr>
+        <tr><td>Sketch</td><td>&lt; 40%</td><td>Candidates only; do not act alone.</td></tr>
+      </tbody>
+    </table>
     <p class="small">Prepared as a worked example. All names, places, and figures are fictional.</p>
   </article>
 </body>
