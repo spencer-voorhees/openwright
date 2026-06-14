@@ -765,6 +765,12 @@ textarea.field { resize: none; line-height: 1.5; }
   position: absolute;
   top: calc(100% + 6px);
   right: 0;
+  min-width: 240px;
+  /* A long artifact list (plus rename/delete) must scroll inside the
+     menu, not run off the bottom of the screen with the actions
+     unreachable. */
+  max-height: min(60vh, 420px);
+  overflow-y: auto;
   background: var(--wp-panel);
   border: 1px solid var(--wp-border);
   border-radius: var(--um-r-md);
@@ -1068,6 +1074,9 @@ textarea.field { resize: none; line-height: 1.5; }
   .panel-head { position: relative; }
   .panel-head .ws-settings-wrap, .panel-head .ws-chip-artifact { position: static; }
   .panel-head .ws-settings-pop, .panel-head .vhist { left: 10px; right: 10px; width: auto; min-width: 0; max-width: none; }
+  /* Full-width artifact menu pinned under the bar, capped + scrollable so
+     Open/Rename/Delete stay on screen and tappable. */
+  .panel-head .ws-artifact-menu { max-height: min(56vh, 420px); overflow-y: auto; }
 }
 
 @media (max-width: 420px) {

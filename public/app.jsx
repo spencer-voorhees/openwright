@@ -1201,7 +1201,7 @@ function ArtifactSelector({ ws, artifacts, activeArtifactId, onSelect, onChange,
         <Icon name="chevron-down" style={{ width: 10, height: 10, marginLeft: 4 }} />
       </button>
       {open && (
-        <div className="vhist" style={{ minWidth: 220 }}>
+        <div className="vhist ws-artifact-menu">
           <div className="eyebrow" style={{ padding: "4px 8px 8px" }}>Artifacts</div>
           {artifacts.map((a) => (
             <div className={"vrow" + (a.id === activeArtifactId ? " cur" : "")} key={a.id}
