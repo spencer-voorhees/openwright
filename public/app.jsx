@@ -1782,27 +1782,28 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted, e
               <Icon name="maximize" /> Present
             </button>
           )}
-          {isHtml && previewUrl && (
-            <button className={"btn" + (editing ? " btn-primary" : " btn-ghost")}
+          {/* Not editing: a single Edit button enters edit mode. While
+              editing, the only exits are explicit — Save (apply) or
+              Discard/Done (leave). No ambiguous "stop editing" toggle. */}
+          {isHtml && previewUrl && !editing && (
+            <button className="btn btn-ghost"
                     disabled={runActive}
                     onClick={() => {
                       if (runActive) return;
                       const ifr = previewRef.current;
                       if (!ifr?.contentWindow) return;
-                      const next = !editing;
-                      ifr.contentWindow.postMessage(
-                        { type: next ? "workpod-edit-enable" : "workpod-edit-disable" }, "*");
-                      setEditing(next);
+                      ifr.contentWindow.postMessage({ type: "workpod-edit-enable" }, "*");
+                      setEditing(true);
                     }}
-                    title={runActive ? "Locked while the agent is working"
-                           : editing ? "Exit edit mode" : "Click-edit text in the preview"}>
-              <Icon name={editing ? "pencil-off" : "pencil"} /> {editing ? "Editing" : "Edit"}
+                    title={runActive ? "Locked while the agent is working" : "Click-edit text in the preview"}>
+              <Icon name="pencil" /> Edit
             </button>
           )}
-          {isHtml && previewUrl && editing && editsDirty && (
+          {isHtml && previewUrl && editing && (
             <>
               <button className="btn btn-primary edits-save-pulse"
-                      disabled={saving}
+                      disabled={saving || !editsDirty}
+                      title={editsDirty ? "Save your edits as a new version" : "No changes to save yet"}
                       onClick={async () => {
                         const ifr = previewRef.current;
                         if (!ifr?.contentWindow) return;
@@ -1828,18 +1829,20 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted, e
                       }}>
                 <Icon name="save" /> {saving ? "Saving…" : "Save edits"}
               </button>
-              <button className="btn btn-ghost btn-danger"
+              <button className={"btn btn-ghost" + (editsDirty ? " btn-danger" : "")}
                       disabled={saving}
+                      title={editsDirty ? "Discard unsaved edits and leave edit mode" : "Leave edit mode"}
                       onClick={() => {
-                        if (!confirm("Discard all unsaved edits? The deck will reload to its last saved version.")) return;
-                        // Reloading the iframe reverts every contentEditable
-                        // change in light DOM and pulls the file fresh.
+                        if (editsDirty && !confirm("Discard all unsaved edits? It will reload to the last saved version.")) return;
                         const ifr = previewRef.current;
-                        if (ifr) ifr.src = previewUrl + (previewUrl.includes("?") ? "&" : "?") + "discard=" + Date.now();
+                        ifr?.contentWindow?.postMessage({ type: "workpod-edit-disable" }, "*");
+                        // Dirty → reload to revert the light-DOM edits;
+                        // clean → just leave edit mode, nothing to undo.
+                        if (editsDirty && ifr) ifr.src = previewUrl + (previewUrl.includes("?") ? "&" : "?") + "discard=" + Date.now();
                         setEditing(false);
                         setEditsDirty(false);
                       }}>
-                <Icon name="x" /> Discard
+                <Icon name={editsDirty ? "x" : "check"} /> {editsDirty ? "Discard" : "Done"}
               </button>
             </>
           )}
