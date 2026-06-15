@@ -2337,7 +2337,7 @@ function AgentPanelBody({ ws, generation, busy, files, notes, onGenerate, onRepl
 
   const placeholder =
     mode === "reply" ? "answer the agent…" :
-    isRunning ? "Agent is working. Your next message can go after it finishes…" :
+    isRunning ? "Agent is working…" :
     "Add a prompt (optional) or just hit Generate…";
 
   // Generate is the only mode where the empty composer can fire.
