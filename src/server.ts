@@ -930,16 +930,25 @@ async function saveEdits(gen_id: string, req: Request) {
   if (!/\.html$/i.test(g.artifact_path)) return err("only HTML artifacts can be edited", 400);
   const body = await req.json() as { html?: string };
   if (!body.html || typeof body.html !== "string") return err("html body required", 400);
-  // Resolve next version path. Pattern: ".../deck-vN.html" → "deck-v(N+1).html".
-  const m = g.artifact_path.match(/^(.+\/(?:deck|doc|sheet)-v)(\d+)(\.html)$/i);
-  if (!m) return err("artifact_path does not follow deck-vN.html convention", 400);
-  let nextV = parseInt(m[2], 10) + 1;
-  let newPath = `${m[1]}${nextV}${m[3]}`;
+  // Resolve the next-version path. Canonical files are deck|doc|sheet-vN.html,
+  // but tolerate ANY base name (<base>-vN.html) and unversioned files
+  // (<base>.html → <base>-v2.html) so a save never 400s on an unexpected
+  // filename — e.g. a deck the agent named after an uploaded artifact.
+  const versioned = g.artifact_path.match(/^(.+-v)(\d+)(\.html)$/i);
+  let prefix: string, nextV: number, suffix: string;
+  if (versioned) {
+    prefix = versioned[1]; nextV = parseInt(versioned[2], 10) + 1; suffix = versioned[3];
+  } else {
+    const unversioned = g.artifact_path.match(/^(.+?)(\.html)$/i);
+    if (!unversioned) return err("only HTML artifacts can be edited", 400);
+    prefix = `${unversioned[1]}-v`; nextV = 2; suffix = unversioned[2];
+  }
+  let newPath = `${prefix}${nextV}${suffix}`;
   // Avoid overwriting if a future-version file already exists (e.g. agent
   // ran in the background while user was editing). Bump until free.
   while (existsSync(newPath)) {
     nextV += 1;
-    newPath = `${m[1]}${nextV}${m[3]}`;
+    newPath = `${prefix}${nextV}${suffix}`;
   }
   writeFileSync(newPath, body.html);
   const now = Date.now();
