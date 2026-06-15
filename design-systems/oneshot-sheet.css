@@ -165,9 +165,22 @@ tr.total td, tr.subtotal td {
 
 /* ── print / PDF ───────────────────────────────────────────── */
 @media print {
+  /* Landscape gives wide tables room; without it Chrome prints portrait
+     Letter (~7.5in) and clips every column past the edge. */
+  @page { size: landscape; margin: 0.4in 0.45in; }
   body { background: var(--white); }
-  .workbook { max-width: none; padding: 0.4in 0.5in; }
+  .workbook { max-width: none; width: 100%; padding: 0; }
   table.sheet thead th, table thead th { position: static; }
+  /* Fit every column on the page: let cells wrap instead of forcing the
+     table wider than the sheet (the on-screen nowrap is what clipped).
+     Aggressive breaking is scoped to body cells so short headers like
+     "Points" stay on one line instead of splitting per character. */
+  table.sheet, table { width: 100%; }
+  table.sheet th, table.sheet td, table th, table td { white-space: normal; }
+  table.sheet td, table td { overflow-wrap: anywhere; word-break: break-word; }
+  /* Repeat the header and keep rows intact when a tall sheet spans pages. */
+  table.sheet thead, table thead { display: table-header-group; }
+  table.sheet tr, table tr { break-inside: avoid; }
 }
 
 @media (max-width: 760px) {
