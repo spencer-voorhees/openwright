@@ -2001,8 +2001,8 @@ function CommentsSection({ artifactId, wsSlug, refreshKey, onKickedOff, onJumpTo
           </form>
           {runActive && (
             <div className="comments-running">
-              <span className="spinner" /> Agent run in progress — open comments were folded into it
-              and will flip to <b>addressed</b> when it completes.
+              <span className="spinner" />
+              <span>Agent run in progress — open comments were folded into it and will flip to <b>addressed</b> when it completes.</span>
             </div>
           )}
           {openCount > 0 && wsSlug && (
