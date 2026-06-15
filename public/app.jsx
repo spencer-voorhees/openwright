@@ -2427,9 +2427,12 @@ function AgentPanelBody({ ws, generation, busy, files, notes, onGenerate, onRepl
                 : "empty workspace"}
             </span>
             <div className="composer-actions">
-              {mode === "generate" && hasPrior && !busy && (
+              {mode === "generate" && hasPrior && (
                 <button className="btn btn-ghost gen-btn"
-                  title="Start clean: the next run won't carry context from prior runs (files and versions on disk are untouched)"
+                  disabled={busy || isRunning}
+                  title={isRunning
+                    ? "Available once the current run finishes"
+                    : "Start clean: the next run won't carry context from prior runs (files and versions on disk are untouched)"}
                   onClick={() => send(composing, { fresh: true })}>
                   <Icon name="refresh-cw" /> Fresh start
                 </button>
