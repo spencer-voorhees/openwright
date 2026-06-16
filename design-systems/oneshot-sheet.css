@@ -184,10 +184,19 @@ tr.total td, tr.subtotal td {
      "Points" stay on one line instead of splitting per character. */
   table.sheet, table { width: 100%; }
   table.sheet th, table.sheet td, table th, table td { white-space: normal; overflow: visible; }
-  table.sheet td, table td { overflow-wrap: anywhere; word-break: break-word; }
+  /* Wrap long text at words; break only genuinely unbreakable strings.
+     (Not `anywhere`/`word-break`, which shrink column min-width to ~1ch
+     and crush narrow columns — e.g. "0.1" splitting into "0." and "1".) */
+  table.sheet td, table td { overflow-wrap: break-word; }
+  /* Numbers should never wrap. */
+  table.sheet .num, table .num, table.sheet td.num, table td.num { white-space: nowrap; }
   /* Repeat the header and keep rows intact when a tall sheet spans pages. */
   table.sheet thead, table thead { display: table-header-group; }
   table.sheet tr, table tr { break-inside: avoid; }
+  /* Keep a sheet's tab label with its table — don't strand the title on
+     the previous page when the grid moves to the next. */
+  .sheet-wrap { break-inside: avoid; }
+  .sheet-name { break-after: avoid; page-break-after: avoid; }
 }
 
 @media (max-width: 760px) {
