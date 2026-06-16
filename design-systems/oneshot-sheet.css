@@ -109,6 +109,13 @@ table.sheet th, table.sheet td, table th, table td {
   text-align: left;
   vertical-align: middle;
   white-space: nowrap;
+  /* If the agent gives a table a fixed layout / explicit column widths,
+     a cell longer than its column used to spill out and overlap the next
+     column. Clip it at the cell edge (with an ellipsis) instead. Plain
+     auto-layout tables size to content, so this never triggers for them.
+     The export reads the full cell text regardless. */
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Header row — shaded, bold, uppercase tracking. */
@@ -176,7 +183,7 @@ tr.total td, tr.subtotal td {
      Aggressive breaking is scoped to body cells so short headers like
      "Points" stay on one line instead of splitting per character. */
   table.sheet, table { width: 100%; }
-  table.sheet th, table.sheet td, table th, table td { white-space: normal; }
+  table.sheet th, table.sheet td, table th, table td { white-space: normal; overflow: visible; }
   table.sheet td, table td { overflow-wrap: anywhere; word-break: break-word; }
   /* Repeat the header and keep rows intact when a tall sheet spans pages. */
   table.sheet thead, table thead { display: table-header-group; }
