@@ -426,6 +426,26 @@ async function downloadFile(fileId: string) {
   });
 }
 
+// Overwrite a note's content in place. Notes are markdown files in the
+// workspace's notes/ dir tracked in `files`; this rewrites the file and
+// refreshes the row. Gated to markdown/text — binary uploads (PDF, CSV)
+// can't be text-edited.
+async function updateNote(slug: string, fileId: string, req: Request) {
+  const w = workspaceBySlug(slug);
+  if (!w) return err("workspace not found", 404);
+  const f = db.query("SELECT * FROM files WHERE id = ? AND workspace_id = ?").get(fileId, w.id) as any;
+  if (!f) return err("note not found", 404);
+  const editable = f.mimetype === "text/markdown" || /\.(md|markdown|txt)$/i.test(f.name || "");
+  if (!editable) return err("only markdown/text notes can be edited", 400);
+  if (!existsSync(f.path)) return err("note file missing on disk", 404);
+  const { content } = await req.json() as { content?: string };
+  if (typeof content !== "string") return err("content required", 400);
+  writeFileSync(f.path, content);
+  const st = statSync(f.path);
+  db.run("UPDATE files SET size = ?, uploaded_at = ? WHERE id = ?", [st.size, Date.now(), f.id]);
+  return json({ ok: true, id: f.id, size: st.size });
+}
+
 async function quickNote(slug: string, req: Request) {
   const w = workspaceBySlug(slug);
   if (!w) return err("workspace not found", 404);
@@ -1028,6 +1048,7 @@ function route(req: Request, url: URL): Promise<Response> | Response {
   if ((mt = m("/api/workspaces/([^/]+)/files")) && req.method === "POST") return uploadFiles(mt[1], req);
   if ((mt = m("/api/workspaces/([^/]+)/files/(\\d+)")) && req.method === "DELETE") return deleteFile(mt[1], mt[2]);
   if ((mt = m("/api/workspaces/([^/]+)/notes")) && req.method === "POST") return quickNote(mt[1], req);
+  if ((mt = m("/api/workspaces/([^/]+)/notes/(\\d+)")) && req.method === "PUT") return updateNote(mt[1], mt[2], req);
   if ((mt = m("/api/workspaces/([^/]+)/generate")) && req.method === "POST") return kickoffGeneration(mt[1], req);
   if ((mt = m("/api/workspaces/([^/]+)/artifacts")) && req.method === "GET") return listArtifacts(mt[1]);
   if ((mt = m("/api/workspaces/([^/]+)/artifacts")) && req.method === "POST") return createArtifact(mt[1], req);

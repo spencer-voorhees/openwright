@@ -649,6 +649,21 @@ textarea.field { resize: none; line-height: 1.5; }
 .modal-form { display: flex; flex-direction: column; gap: 10px; }
 .modal-form label { font-family: var(--um-font-mono); font-size: 11px; letter-spacing: .06em; color: var(--wp-fg-muted); text-transform: uppercase; }
 
+/* ── note editor: create + edit, raw markdown with a preview toggle ── */
+.note-modal { width: 640px; }
+.note-modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
+.note-modal-head h3 { margin: 0; }
+.note-sub { margin: 0 0 14px; }
+.seg { display: inline-flex; background: var(--wp-panel); border: 1px solid var(--wp-border-strong); border-radius: 999px; padding: 3px; gap: 2px; flex: none; }
+.seg-btn { font-family: var(--um-font-mono); font-size: 12px; color: var(--wp-fg-muted); background: none; border: none; padding: 5px 14px; border-radius: 999px; cursor: pointer; transition: color var(--um-dur-fast), background var(--um-dur-fast); }
+.seg-btn.on { color: var(--wp-fg); background: var(--wp-elev-2); }
+.seg-btn:hover:not(.on) { color: var(--wp-fg); }
+.note-raw { width: 100%; height: 320px; resize: vertical; font-family: var(--um-font-mono); font-size: 13px; line-height: 1.6; tab-size: 2; }
+.note-preview { height: 320px; overflow-y: auto; background: var(--wp-panel); border: 1px solid var(--wp-border-strong); border-radius: var(--um-r-md); padding: 14px 16px; }
+.note-empty { color: var(--wp-fg-faint); font-style: italic; }
+.note-mode { display: flex; gap: 16px; margin-top: 12px; font-size: 12.5px; color: var(--wp-fg-muted); }
+.note-mode label { display: inline-flex; align-items: center; gap: 6px; }
+
 .ws-options { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
 .ws-options .opt { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border-radius: var(--um-r-md); border: 1px solid var(--wp-border); background: var(--wp-panel); cursor: pointer; transition: border-color var(--um-dur-fast); }
 .ws-options .opt:hover { border-color: var(--wp-border-strong); }

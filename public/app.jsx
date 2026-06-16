@@ -108,6 +108,10 @@ async function patchJson(url, body) {
   return fetchJson(url, { method: "PATCH", headers: { "content-type": "application/json" },
                           body: JSON.stringify(body || {}) });
 }
+async function putJson(url, body) {
+  return fetchJson(url, { method: "PUT", headers: { "content-type": "application/json" },
+                          body: JSON.stringify(body || {}) });
+}
 async function del(url) { return fetchJson(url, { method: "DELETE" }); }
 
 // ─── formatters ─────────────────────────────────────────────────
@@ -1526,13 +1530,14 @@ function FilesPanel({ ws, files, notes, generations, artifacts, activeArtifactId
           <>
             <div className="sec-label"><span className="eyebrow">Notes</span></div>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {notes.map((n) => <NoteRow key={n.id} note={n} onDelete={removeFile} />)}
+              {notes.map((n) => <NoteRow key={n.id} note={n} onEdit={setNoteModal} onDelete={removeFile} />)}
             </div>
           </>
         )}
       </div>
       {noteModal && (
-        <NoteModal slug={ws.slug} onClose={() => setNoteModal(false)}
+        <NoteModal slug={ws.slug} note={noteModal === true ? null : noteModal}
+                   onClose={() => setNoteModal(false)}
                    onSaved={() => { setNoteModal(false); onChange(); }} />
       )}
     </div>
@@ -1562,7 +1567,7 @@ function FileRow({ file, onDelete }) {
   );
 }
 
-function NoteRow({ note, onDelete }) {
+function NoteRow({ note, onEdit, onDelete }) {
   return (
     <div className="note fade-up">
       <Icon name="sticky-note" className="qico" />
@@ -1571,11 +1576,14 @@ function NoteRow({ note, onDelete }) {
         <div className="nmeta">NOTE · {fmtTime(note.uploaded_at)} · {fmtBytes(note.size)}</div>
       </div>
       <span className="row-actions">
+        <button className="icon-btn" title="Edit" onClick={() => onEdit(note)}>
+          <Icon name="pencil" />
+        </button>
         <button className="icon-btn" title="Download"
           onClick={() => window.open(`/api/files/${note.id}`)}>
           <Icon name="download" />
         </button>
-        <button className="icon-btn danger" onClick={() => onDelete(note.id)}>
+        <button className="icon-btn danger" title="Delete" onClick={() => onDelete(note.id)}>
           <Icon name="trash-2" />
         </button>
       </span>
@@ -2205,49 +2213,94 @@ function CommentRow({ comment, onChange, disabled, onJump, isDoc }) {
   );
 }
 
-function NoteModal({ slug, onClose, onSaved }) {
+// Create OR edit a note. With `note` it loads that note's markdown for
+// editing (saves back via PUT); without, it creates a new note. Either
+// way the body is edited as raw markdown with a Raw/Preview toggle.
+function NoteModal({ slug, note, onClose, onSaved }) {
+  const editing = !!note;
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [mode, setMode] = useState("new");
+  const [view, setView] = useState("raw");       // raw | preview
   const [busy, setBusy] = useState(false);
-  const titleRef = useRef(null);
-  useEffect(() => { titleRef.current?.focus(); }, []);
+  const [loading, setLoading] = useState(editing);
+  const taRef = useRef(null);
+
+  // Editing: pull the note's current markdown to prefill the editor.
+  useEffect(() => {
+    if (!editing) { taRef.current?.focus(); return; }
+    let alive = true;
+    fetch(`/api/files/${note.id}`, { cache: "no-store" })
+      .then((r) => r.text())
+      .then((t) => { if (alive) { setBody(t); setLoading(false); } })
+      .catch(() => { if (alive) { setLoading(false); alert("could not load note"); } });
+    return () => { alive = false; };
+  }, [editing, note]);
+
+  // Focus the textarea once loaded / when switching back to raw.
+  useEffect(() => { if (view === "raw" && !loading) taRef.current?.focus(); }, [view, loading]);
+
   const submit = async (e) => {
     e?.preventDefault();
-    if (!body.trim() || busy) return;
+    if (busy || loading || (!editing && !body.trim())) return;
     setBusy(true);
     try {
-      await postJson(`/api/workspaces/${slug}/notes`,
-        { title: title.trim() || undefined, content: body.trim(), mode });
+      if (editing) {
+        await putJson(`/api/workspaces/${slug}/notes/${note.id}`, { content: body });
+      } else {
+        await postJson(`/api/workspaces/${slug}/notes`,
+          { title: title.trim() || undefined, content: body.trim(), mode });
+      }
       onSaved();
     } catch (e) { alert("save failed: " + e.message); }
     finally { setBusy(false); }
   };
+
   return (
     <div className="scrim" onClick={onClose}>
-      <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
-        <h3>Quick note</h3>
-        <p>Markdown is fine. Either creates a new dated .md or appends to <span className="mono">notes.md</span>.</p>
-        <div className="modal-form">
-          <label>Title (optional)</label>
-          <input ref={titleRef} className="field"
-                 value={title} onChange={(e) => setTitle(e.target.value)} />
-          <label>Body</label>
-          <textarea className="field" rows={6} value={body}
-                    onChange={(e) => setBody(e.target.value)} />
-          <div style={{ display: "flex", gap: 14, fontSize: 12.5, color: "var(--wp-fg-muted)" }}>
-            <label style={{ textTransform: "none", letterSpacing: 0, fontFamily: "inherit" }}>
-              <input type="radio" checked={mode === "new"} onChange={() => setMode("new")} /> new file
-            </label>
-            <label style={{ textTransform: "none", letterSpacing: 0, fontFamily: "inherit" }}>
-              <input type="radio" checked={mode === "append"} onChange={() => setMode("append")} /> append to notes.md
-            </label>
+      <form className="modal note-modal" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
+        <div className="note-modal-head">
+          <h3>{editing ? "Edit note" : "Quick note"}</h3>
+          <div className="seg" role="tablist">
+            <button type="button" role="tab" className={"seg-btn" + (view === "raw" ? " on" : "")}
+                    onClick={() => setView("raw")}>Raw</button>
+            <button type="button" role="tab" className={"seg-btn" + (view === "preview" ? " on" : "")}
+                    onClick={() => setView("preview")}>Preview</button>
           </div>
         </div>
+        {editing
+          ? <p className="note-sub">Editing <span className="mono">{note.name}</span>. Edit the raw markdown; flip to Preview to check.</p>
+          : <p className="note-sub">Markdown is fine. Creates a new dated .md, or appends to <span className="mono">notes.md</span>.</p>}
+
+        {!editing && (
+          <div className="modal-form" style={{ marginBottom: 10 }}>
+            <label>Title (optional)</label>
+            <input className="field" value={title} onChange={(e) => setTitle(e.target.value)} />
+          </div>
+        )}
+
+        <div className="note-editor">
+          {view === "raw"
+            ? <textarea ref={taRef} className="field note-raw" spellCheck={true}
+                        placeholder={loading ? "Loading…" : "# Write markdown here"}
+                        value={body} disabled={loading}
+                        onChange={(e) => setBody(e.target.value)} />
+            : <div className="note-preview">
+                {body.trim() ? <Markdown text={body} /> : <span className="note-empty">Nothing to preview yet.</span>}
+              </div>}
+        </div>
+
+        {!editing && (
+          <div className="note-mode">
+            <label><input type="radio" checked={mode === "new"} onChange={() => setMode("new")} /> new file</label>
+            <label><input type="radio" checked={mode === "append"} onChange={() => setMode("append")} /> append to notes.md</label>
+          </div>
+        )}
+
         <div className="modal-foot">
           <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button type="submit" className="btn btn-primary" disabled={busy || !body.trim()}>
-            <Icon name="check" /> Save
+          <button type="submit" className="btn btn-primary" disabled={busy || loading || (!editing && !body.trim())}>
+            <Icon name="check" /> {busy ? "Saving…" : editing ? "Save changes" : "Save"}
           </button>
         </div>
       </form>
