@@ -134,6 +134,9 @@ addColumnIfMissing("design_systems", "artifact_type",     "TEXT NOT NULL DEFAULT
 // no variant for that medium — the deck CSS is the fallback).
 addColumnIfMissing("design_systems", "css_document",      "TEXT NOT NULL DEFAULT ''");
 addColumnIfMissing("design_systems", "css_spreadsheet",   "TEXT NOT NULL DEFAULT ''");
+// Brand tokens (JSON) for token-themed systems — lets the visual editor
+// round-trip (prefill the form with current accent/fonts, re-theme on save).
+addColumnIfMissing("design_systems", "tokens",            "TEXT NOT NULL DEFAULT ''");
 // Authoring persona — drives the AGENT's writing voice. Default is
 // terse/technical; users can swap to executive-summary, detailed, or
 // mixed-audience via the workspace settings panel. Persona text gets

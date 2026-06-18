@@ -214,6 +214,19 @@ function buildTokenOverride(tokens: any, name?: string): string {
   return `\n/* brand tokens — overrides Oneshot's :root, structure unchanged */\n:root {\n${lines.join("\n")}\n}\n`;
 }
 
+// Clone Oneshot across all three mediums and append the brand-token
+// override to each variant. Shared by create + visual-edit (re-theme).
+function themeFromOneshot(tokens: any, name: string): { css: string; doc: string; sheet: string } {
+  const os = db.query("SELECT css, css_document, css_spreadsheet FROM design_systems WHERE slug = 'oneshot'").get() as any;
+  const override = buildTokenOverride(tokens, name);
+  const head = `/* ${name} — themed from Oneshot via brand tokens. Structure intact for export fidelity. */\n`;
+  return {
+    css:   head + (os?.css || "") + override,
+    doc:   os?.css_document   ? head + os.css_document   + override : "",
+    sheet: os?.css_spreadsheet ? head + os.css_spreadsheet + override : "",
+  };
+}
+
 async function createDesignSystem(req: Request) {
   const { name, css, description, from_id, tokens } = await req.json() as
     { name: string; css?: string; description?: string; from_id?: number; tokens?: any };
@@ -228,17 +241,15 @@ async function createDesignSystem(req: Request) {
   let cssContent = css ?? "";
   let docContent = "";
   let sheetContent = "";
+  let tokensJson = "";
 
   if (!cssContent && tokens) {
-    // Token-themed: clone Oneshot across ALL three mediums and append a
-    // brand-token override to each variant. Same structure → repeatable,
-    // export-lossless results, just re-skinned.
-    const os = db.query("SELECT css, css_document, css_spreadsheet FROM design_systems WHERE slug = 'oneshot'").get() as any;
-    const override = buildTokenOverride(tokens, name.trim());
-    const head = `/* ${name.trim()} — themed from Oneshot via brand tokens. Structure intact for export fidelity. */\n`;
-    cssContent   = head + (os?.css || "") + override;
-    docContent   = os?.css_document   ? head + os.css_document   + override : "";
-    sheetContent = os?.css_spreadsheet ? head + os.css_spreadsheet + override : "";
+    // Token-themed: clone Oneshot across all three mediums (same structure
+    // → repeatable, export-lossless). Stash the tokens so the visual editor
+    // can round-trip them.
+    const t = themeFromOneshot(tokens, name.trim());
+    cssContent = t.css; docContent = t.doc; sheetContent = t.sheet;
+    tokensJson = JSON.stringify(tokens);
   } else if (!cssContent && from_id) {
     // Optional clone-from: copy an existing system's variants as a start.
     const src = db.query("SELECT css, css_document, css_spreadsheet FROM design_systems WHERE id = ?").get(from_id) as any;
@@ -254,8 +265,8 @@ async function createDesignSystem(req: Request) {
   }
   const now = Date.now();
   const ins = db.run(
-    "INSERT INTO design_systems(name, slug, css, css_document, css_spreadsheet, description, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?)",
-    [name.trim(), candidate, cssContent, docContent, sheetContent, description?.trim() || null, now, now]) as any;
+    "INSERT INTO design_systems(name, slug, css, css_document, css_spreadsheet, tokens, description, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    [name.trim(), candidate, cssContent, docContent, sheetContent, tokensJson, description?.trim() || null, now, now]) as any;
   return json({ design_system: db.query("SELECT * FROM design_systems WHERE id = ?").get(Number(ins.lastInsertRowid)) }, 201);
 }
 
@@ -263,11 +274,23 @@ async function updateDesignSystem(id: string, req: Request) {
   const row = db.query("SELECT * FROM design_systems WHERE id = ?").get(id) as any;
   if (!row) return err("not found", 404);
   if (row.builtin) return err("built-in design systems are read-only", 403);
-  const body = await req.json() as { name?: string; css?: string; description?: string };
+  const body = await req.json() as { name?: string; css?: string; description?: string; tokens?: any };
   const sets: string[] = [];
   const vals: any[] = [];
+  const newName = (body.name !== undefined && body.name.trim()) ? body.name.trim() : row.name;
   if (body.name !== undefined && body.name.trim()) { sets.push("name = ?"); vals.push(body.name.trim()); }
-  if (body.css !== undefined) { sets.push("css = ?"); vals.push(body.css); }
+  if (body.tokens) {
+    // Visual edit: regenerate the themed CSS across all variants from
+    // Oneshot + the new tokens (this replaces any prior CSS, including
+    // manual raw edits — the visual editor owns the whole theme).
+    const t = themeFromOneshot(body.tokens, newName);
+    sets.push("css = ?");             vals.push(t.css);
+    sets.push("css_document = ?");    vals.push(t.doc);
+    sets.push("css_spreadsheet = ?"); vals.push(t.sheet);
+    sets.push("tokens = ?");          vals.push(JSON.stringify(body.tokens));
+  } else if (body.css !== undefined) {
+    sets.push("css = ?"); vals.push(body.css);
+  }
   if (body.description !== undefined) { sets.push("description = ?"); vals.push(body.description); }
   if (sets.length === 0) return json({ design_system: row });
   sets.push("updated_at = ?"); vals.push(Date.now());

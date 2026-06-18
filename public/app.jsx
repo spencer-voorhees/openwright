@@ -2723,11 +2723,28 @@ function dsAccentFamily(accent) {
 }
 
 // Guided token form: name + accent + fonts → a branded clone of Oneshot.
-function NewDesignSystemModal({ onClose, onCreated }) {
-  const [name, setName] = useState("");
-  const [accent, setAccent] = useState(DS_ACCENTS[0]);
-  const [fontDisplay, setFontDisplay] = useState(DS_FONTS[0].value);
-  const [fontSans, setFontSans] = useState(DS_FONTS[0].value);
+// With `system`, edits an existing token-themed system (prefilled, saves
+// via PATCH which re-themes). Without, creates a new one.
+function DesignSystemModal({ system, onClose, onSaved }) {
+  const editing = !!system;
+  const init = (() => {
+    try {
+      if (system?.tokens) return JSON.parse(system.tokens);
+      // Fallback for systems themed before tokens were stored: read the
+      // override values out of the CSS (last occurrence wins = the override).
+      const css = system?.css || "";
+      const last = (k) => { const re = new RegExp(k + "\\s*:\\s*([^;]+);", "g"); let m, v = null; while ((m = re.exec(css))) v = m[1].trim(); return v; };
+      const accent = last("--accent");
+      if (accent && /^#[0-9a-fA-F]{6}$/.test(accent)) {
+        return { accent, fontDisplay: last("--font-display"), fontSans: last("--font-sans") };
+      }
+    } catch {}
+    return null;
+  })();
+  const [name, setName] = useState(editing ? (system.name || "") : "");
+  const [accent, setAccent] = useState(init?.accent || DS_ACCENTS[0]);
+  const [fontDisplay, setFontDisplay] = useState(init?.fontDisplay || DS_FONTS[0].value);
+  const [fontSans, setFontSans] = useState(init?.fontSans || DS_FONTS[0].value);
   const [busy, setBusy] = useState(false);
   const fam = dsAccentFamily(accent);
   const submit = async (e) => {
@@ -2735,21 +2752,22 @@ function NewDesignSystemModal({ onClose, onCreated }) {
     if (!name.trim() || busy) return;
     setBusy(true);
     try {
-      const d = await postJson("/api/design-systems", {
-        name: name.trim(),
-        description: "Themed from Oneshot",
-        tokens: { ...fam, fontDisplay, fontSans },
-      });
-      onCreated(d.design_system);
-    } catch (e) { alert("create failed: " + e.message); }
+      const tokens = { ...fam, fontDisplay, fontSans };
+      const d = editing
+        ? await patchJson(`/api/design-systems/${system.id}`, { name: name.trim(), tokens })
+        : await postJson("/api/design-systems", { name: name.trim(), description: "Themed from Oneshot", tokens });
+      onSaved(d.design_system);
+    } catch (e) { alert("save failed: " + e.message); }
     finally { setBusy(false); }
   };
   const previewVars = { "--p-accent": fam.accent, "--p-deep": fam.accentDeep, "--p-soft": fam.accentSoft, "--p-tint": fam.accentTint, "--p-wash": fam.accentWash };
   return (
     <div className="scrim" onClick={onClose}>
       <form className="modal ds-new-modal" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
-        <h3>New design system</h3>
-        <p className="note-sub">A branded copy of Oneshot, same structure so results stay repeatable, just your colors and fonts. Edit the CSS later for deeper changes.</p>
+        <h3>{editing ? "Edit theme" : "New design system"}</h3>
+        <p className="note-sub">{editing
+          ? "Tweak this system's colors and fonts. Saving re-themes it from Oneshot, so any manual CSS edits would be replaced."
+          : "A branded copy of Oneshot, same structure so results stay repeatable, just your colors and fonts. Edit the CSS later for deeper changes."}</p>
         <div className="ds-new-grid">
           <div className="ds-new-form">
             <label>Name</label>
@@ -2794,7 +2812,7 @@ function NewDesignSystemModal({ onClose, onCreated }) {
         <div className="modal-foot">
           <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
           <button type="submit" className="btn btn-primary" disabled={busy || !name.trim()}>
-            <Icon name="check" /> {busy ? "Creating…" : "Create"}
+            <Icon name="check" /> {busy ? "Saving…" : editing ? "Save theme" : "Create"}
           </button>
         </div>
       </form>
@@ -2830,9 +2848,9 @@ function DesignSystems({ activeSystemId, onSelect, onBack }) {
           </button>
         </div>
         {creating && (
-          <NewDesignSystemModal
+          <DesignSystemModal
             onClose={() => setCreating(false)}
-            onCreated={(s) => { setCreating(false); refresh(); onSelect?.(s.id); }} />
+            onSaved={(s) => { setCreating(false); refresh(); onSelect?.(s.id); }} />
         )}
         <div className="ds-grid">
           {systems.map((s) => (
@@ -2863,6 +2881,7 @@ function DesignSystemEditor({ systemId, onBack, onChange }) {
   const [saving, setSaving] = useState(false);
   const [previewKey, setPreviewKey] = useState(0);
   const [editing, setEditing] = useState(false);   // false = preview only (default)
+  const [themeOpen, setThemeOpen] = useState(false);   // visual token editor
   // What the preview pane shows: the token spec sheet (default), or a
   // worked example. The example can be either medium — a sub-picker
   // inside the Example tab switches it. Pure display — no effect on
@@ -2970,6 +2989,10 @@ function DesignSystemEditor({ systemId, onBack, onChange }) {
           ) : (
             <>
               {dirty && <span className="eyebrow" style={{ color: "var(--wp-warn)" }}>unsaved</span>}
+              <button className="btn btn-ghost" onClick={() => setThemeOpen(true)}
+                      title="Edit this system's colors and fonts visually">
+                <Icon name="palette" /> Edit theme
+              </button>
               <button className={"btn" + (editing ? " btn-primary" : " btn-ghost")}
                       onClick={() => setEditing((e) => !e)}
                       title={editing ? "Hide CSS editor (preview only)" : "Show CSS editor alongside preview"}>
@@ -3001,6 +3024,11 @@ function DesignSystemEditor({ systemId, onBack, onChange }) {
                   sandbox="allow-scripts allow-same-origin" />
         </div>
       </div>
+      {themeOpen && (
+        <DesignSystemModal system={data}
+          onClose={() => setThemeOpen(false)}
+          onSaved={() => { setThemeOpen(false); load(); setPreviewKey((k) => k + 1); onChange?.(); }} />
+      )}
     </div>
   );
 }
