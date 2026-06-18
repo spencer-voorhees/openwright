@@ -11,7 +11,11 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 const DEFAULT_MODEL = process.env.OPENWRIGHT_CLAUDE_MODEL || "claude-sonnet-4-6";
-const MAX_TURNS = parseInt(process.env.OPENWRIGHT_MAX_TURNS || "30", 10);
+// Building a rich deck (render visuals, assemble slides, refine) is
+// turn-intensive; 30 was cutting complex runs off mid-task. 80 gives room,
+// and a max-turns stop is now surfaced in the chat (below) so it's never
+// silent. Override with OPENWRIGHT_MAX_TURNS.
+const MAX_TURNS = parseInt(process.env.OPENWRIGHT_MAX_TURNS || "80", 10);
 
 // A deck/doc body (often 30KB+) is written in a single Write call, which
 // can blow past the Agent SDK's default 32K output-token cap and fail the
@@ -132,6 +136,17 @@ export const claudeAdapter: AgentAdapter = {
       for await (const msg of result as any) {
         opts.onActivity();
         if (msg.type === "stream_event") continue; // heartbeat only
+        // The SDK ends each turn with a result message. A max-turns stop is
+        // otherwise invisible (the run looks "done" mid-task), so surface it.
+        if (msg.type === "result") {
+          if (msg.subtype === "error_max_turns") {
+            opts.onEvent({
+              kind: "system",
+              text: `⚠ Stopped at the turn limit (${msg.num_turns ?? MAX_TURNS} turns). The build may be incomplete — hit Generate to continue from here, or set OPENWRIGHT_MAX_TURNS higher.`,
+            });
+          }
+          continue;
+        }
         if (msg.type === "assistant" && msg.message?.content) {
           for (const block of msg.message.content) {
             if (block.type === "text" && block.text?.trim()) {
