@@ -13,6 +13,12 @@ import { join } from "node:path";
 const DEFAULT_MODEL = process.env.OPENWRIGHT_CLAUDE_MODEL || "claude-sonnet-4-6";
 const MAX_TURNS = parseInt(process.env.OPENWRIGHT_MAX_TURNS || "30", 10);
 
+// A deck/doc body (often 30KB+) is written in a single Write call, which
+// can blow past the Agent SDK's default 32K output-token cap and fail the
+// run ("Claude's response exceeded the 32000 output token maximum"). Raise
+// it to the current models' max unless the user set their own.
+process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS ||= "64000";
+
 // Compact one-line summary of a tool invocation for the chat panel.
 function summarizeToolInput(name: string, input: any): string {
   if (!input || typeof input !== "object") return "";
