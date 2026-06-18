@@ -190,9 +190,33 @@ async function getDesignSystem(id: string) {
   return json({ design_system: row });
 }
 
+// Build a `:root { … }` override block from brand tokens. Values are
+// sanitized — hex colors and a safe font-stack charset only — so a token
+// can't break out of the declaration and inject CSS.
+function buildTokenOverride(tokens: any, name?: string): string {
+  if (!tokens || typeof tokens !== "object") return "";
+  const hex = (v: any) => typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v) ? v : null;
+  const font = (v: any) => typeof v === "string" && /^[A-Za-z0-9 ,"'\-]{1,80}$/.test(v) ? v : null;
+  const map: [string, string | null][] = [
+    ["--accent",       hex(tokens.accent)],
+    ["--accent-deep",  hex(tokens.accentDeep)],
+    ["--accent-soft",  hex(tokens.accentSoft)],
+    ["--accent-tint",  hex(tokens.accentTint)],
+    ["--accent-wash",  hex(tokens.accentWash)],
+    ["--font-display", font(tokens.fontDisplay)],
+    ["--font-sans",    font(tokens.fontSans)],
+  ];
+  const lines = map.filter(([, v]) => v).map(([k, v]) => `  ${k}: ${v};`);
+  // The specimen reads --system-name; carry the new name so it isn't "Oneshot".
+  const clean = (name || "").replace(/["'\\{};<>]/g, "").trim().slice(0, 60);
+  if (clean) lines.unshift(`  --system-name: "${clean}";`);
+  if (!lines.length) return "";
+  return `\n/* brand tokens — overrides Oneshot's :root, structure unchanged */\n:root {\n${lines.join("\n")}\n}\n`;
+}
+
 async function createDesignSystem(req: Request) {
-  const { name, css, description, from_id } = await req.json() as
-    { name: string; css?: string; description?: string; from_id?: number };
+  const { name, css, description, from_id, tokens } = await req.json() as
+    { name: string; css?: string; description?: string; from_id?: number; tokens?: any };
   if (!name || !name.trim()) return err("name required");
   let base = slugify(name.trim());
   if (!base) base = "system";
@@ -202,21 +226,36 @@ async function createDesignSystem(req: Request) {
     candidate = `${base}-${n++}`;
   }
   let cssContent = css ?? "";
-  // Optional clone-from: copy CSS from an existing system as starting point.
-  if (!cssContent && from_id) {
-    const src = db.query("SELECT css FROM design_systems WHERE id = ?").get(from_id) as any;
-    if (src) cssContent = src.css || "";
+  let docContent = "";
+  let sheetContent = "";
+
+  if (!cssContent && tokens) {
+    // Token-themed: clone Oneshot across ALL three mediums and append a
+    // brand-token override to each variant. Same structure → repeatable,
+    // export-lossless results, just re-skinned.
+    const os = db.query("SELECT css, css_document, css_spreadsheet FROM design_systems WHERE slug = 'oneshot'").get() as any;
+    const override = buildTokenOverride(tokens, name.trim());
+    const head = `/* ${name.trim()} — themed from Oneshot via brand tokens. Structure intact for export fidelity. */\n`;
+    cssContent   = head + (os?.css || "") + override;
+    docContent   = os?.css_document   ? head + os.css_document   + override : "";
+    sheetContent = os?.css_spreadsheet ? head + os.css_spreadsheet + override : "";
+  } else if (!cssContent && from_id) {
+    // Optional clone-from: copy an existing system's variants as a start.
+    const src = db.query("SELECT css, css_document, css_spreadsheet FROM design_systems WHERE id = ?").get(from_id) as any;
+    if (src) { cssContent = src.css || ""; docContent = src.css_document || ""; sheetContent = src.css_spreadsheet || ""; }
   }
   if (!cssContent) {
-    // New systems start as a themed copy of Oneshot — it is the
-    // export-lossless baseline, so every derivative stays portable.
-    const oneshot = db.query("SELECT css FROM design_systems WHERE slug = 'oneshot'").get() as any;
-    cssContent = `/* ${name.trim()} — themed from Oneshot. Restyle via tokens; keep structural rules intact for export fidelity. */\n` + (oneshot?.css || "");
+    // Plain clone of Oneshot (all variants) when no css/tokens/from_id.
+    const os = db.query("SELECT css, css_document, css_spreadsheet FROM design_systems WHERE slug = 'oneshot'").get() as any;
+    const head = `/* ${name.trim()} — themed from Oneshot. Restyle via tokens; keep structural rules intact for export fidelity. */\n`;
+    cssContent   = head + (os?.css || "");
+    docContent   = os?.css_document   ? head + os.css_document   : "";
+    sheetContent = os?.css_spreadsheet ? head + os.css_spreadsheet : "";
   }
   const now = Date.now();
   const ins = db.run(
-    "INSERT INTO design_systems(name, slug, css, description, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?)",
-    [name.trim(), candidate, cssContent, description?.trim() || null, now, now]) as any;
+    "INSERT INTO design_systems(name, slug, css, css_document, css_spreadsheet, description, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?)",
+    [name.trim(), candidate, cssContent, docContent, sheetContent, description?.trim() || null, now, now]) as any;
   return json({ design_system: db.query("SELECT * FROM design_systems WHERE id = ?").get(Number(ins.lastInsertRowid)) }, 201);
 }
 

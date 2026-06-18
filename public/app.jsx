@@ -2694,8 +2694,117 @@ function DesignSystemPicker({ ws, onChange }) {
   );
 }
 
+// ─── design-system brand tokens (client mirror of the server's math) ──
+// Export-safe font stacks (these map cleanly to PPTX/DOCX/XLSX).
+const DS_FONTS = [
+  { label: "Helvetica / Arial (Oneshot)", value: '"Helvetica Neue", Helvetica, Arial, sans-serif' },
+  { label: "Arial",                       value: "Arial, Helvetica, sans-serif" },
+  { label: "Verdana",                     value: "Verdana, Geneva, sans-serif" },
+  { label: "Tahoma",                      value: "Tahoma, Geneva, sans-serif" },
+  { label: "Segoe UI",                    value: '"Segoe UI", system-ui, sans-serif' },
+  { label: "Georgia (serif)",             value: "Georgia, serif" },
+  { label: "Cambria (serif)",             value: "Cambria, Georgia, serif" },
+  { label: "Times New Roman (serif)",     value: '"Times New Roman", Times, serif' },
+];
+const DS_ACCENTS = ["#0071E3", "#FF5A1F", "#1A8A3C", "#8E5AF2", "#D93025", "#0E7490", "#C026D3", "#B45309"];
+
+function dsHexToRgb(h) { h = h.replace("#", ""); return [parseInt(h.slice(0,2),16), parseInt(h.slice(2,4),16), parseInt(h.slice(4,6),16)]; }
+function dsRgbToHex(r,g,b) { const f = (x) => Math.round(Math.max(0,Math.min(255,x))).toString(16).padStart(2,"0"); return "#"+f(r)+f(g)+f(b); }
+// fg composited over bg at alpha a → an opaque hex (exports need solid fills).
+function dsOver(fg, bg, a) { const [r1,g1,b1]=dsHexToRgb(fg), [r2,g2,b2]=dsHexToRgb(bg); return dsRgbToHex(r1*a+r2*(1-a), g1*a+g2*(1-a), b1*a+b2*(1-a)); }
+function dsAccentFamily(accent) {
+  return {
+    accent,
+    accentDeep: dsOver("#000000", accent, 0.22),  // 22% black over accent
+    accentSoft: dsOver("#FFFFFF", accent, 0.28),  // 28% white over accent
+    accentTint: dsOver(accent, "#FFFFFF", 0.08),  // accent 8% over white (matches Oneshot)
+    accentWash: dsOver(accent, "#FFFFFF", 0.04),  // accent 4% over white (matches Oneshot)
+  };
+}
+
+// Guided token form: name + accent + fonts → a branded clone of Oneshot.
+function NewDesignSystemModal({ onClose, onCreated }) {
+  const [name, setName] = useState("");
+  const [accent, setAccent] = useState(DS_ACCENTS[0]);
+  const [fontDisplay, setFontDisplay] = useState(DS_FONTS[0].value);
+  const [fontSans, setFontSans] = useState(DS_FONTS[0].value);
+  const [busy, setBusy] = useState(false);
+  const fam = dsAccentFamily(accent);
+  const submit = async (e) => {
+    e?.preventDefault();
+    if (!name.trim() || busy) return;
+    setBusy(true);
+    try {
+      const d = await postJson("/api/design-systems", {
+        name: name.trim(),
+        description: "Themed from Oneshot",
+        tokens: { ...fam, fontDisplay, fontSans },
+      });
+      onCreated(d.design_system);
+    } catch (e) { alert("create failed: " + e.message); }
+    finally { setBusy(false); }
+  };
+  const previewVars = { "--p-accent": fam.accent, "--p-deep": fam.accentDeep, "--p-soft": fam.accentSoft, "--p-tint": fam.accentTint, "--p-wash": fam.accentWash };
+  return (
+    <div className="scrim" onClick={onClose}>
+      <form className="modal ds-new-modal" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
+        <h3>New design system</h3>
+        <p className="note-sub">A branded copy of Oneshot, same structure so results stay repeatable, just your colors and fonts. Edit the CSS later for deeper changes.</p>
+        <div className="ds-new-grid">
+          <div className="ds-new-form">
+            <label>Name</label>
+            <input className="field" value={name} autoFocus placeholder="Acme Brand"
+                   onChange={(e) => setName(e.target.value)} />
+            <label>Accent</label>
+            <div className="ds-accent-row">
+              {DS_ACCENTS.map((c) => (
+                <button type="button" key={c} aria-label={c}
+                        className={"ds-swatch" + (c.toLowerCase() === accent.toLowerCase() ? " on" : "")}
+                        style={{ background: c }} onClick={() => setAccent(c)} />
+              ))}
+              <input type="color" className="ds-color-input" value={accent} onChange={(e) => setAccent(e.target.value)} />
+            </div>
+            <label>Display font</label>
+            <select className="field" value={fontDisplay} onChange={(e) => setFontDisplay(e.target.value)}>
+              {DS_FONTS.map((f) => <option key={f.label} value={f.value}>{f.label}</option>)}
+            </select>
+            <label>Body font</label>
+            <select className="field" value={fontSans} onChange={(e) => setFontSans(e.target.value)}>
+              {DS_FONTS.map((f) => <option key={f.label} value={f.value}>{f.label}</option>)}
+            </select>
+          </div>
+          <div className="ds-new-preview" style={previewVars}>
+            <div className="ds-prev-eyebrow" style={{ fontFamily: fontSans }}>Preview</div>
+            <div className="ds-prev-title" style={{ fontFamily: fontDisplay }}>Coverage up 38%</div>
+            <div className="ds-prev-bar"></div>
+            <p className="ds-prev-body" style={{ fontFamily: fontSans }}>A line of body text in your typeface, with an <b>accent</b> for punctuation.</p>
+            <div className="ds-prev-row">
+              <span className="ds-prev-btn" style={{ fontFamily: fontSans }}>Primary</span>
+              <span className="ds-prev-pill" style={{ fontFamily: fontSans }}>Tinted</span>
+            </div>
+            <div className="ds-prev-swatches">
+              <span style={{ background: fam.accentDeep }} title="deep"></span>
+              <span style={{ background: fam.accent }} title="accent"></span>
+              <span style={{ background: fam.accentSoft }} title="soft"></span>
+              <span style={{ background: fam.accentTint }} title="tint"></span>
+              <span style={{ background: fam.accentWash }} title="wash"></span>
+            </div>
+          </div>
+        </div>
+        <div className="modal-foot">
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button type="submit" className="btn btn-primary" disabled={busy || !name.trim()}>
+            <Icon name="check" /> {busy ? "Creating…" : "Create"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 function DesignSystems({ activeSystemId, onSelect, onBack }) {
   const [systems, setSystems] = useState([]);
+  const [creating, setCreating] = useState(false);
   const refresh = useCallback(async () => {
     const d = await fetchJson("/api/design-systems");
     setSystems(d.design_systems || []);
@@ -2716,10 +2825,15 @@ function DesignSystems({ activeSystemId, onSelect, onBack }) {
             <h1 className="dash-title">Design systems</h1>
             <p className="dash-sub">Workspace-agnostic CSS bundles. Reference one from any workspace; edit here once, all referencing decks update on next reload.</p>
           </div>
-          {/* Creation is omitted until prompting an agent to build a
-              design system is actually wired up — a bare name prompt
-              that clones Oneshot read as "does nothing". */}
+          <button className="btn btn-primary" onClick={() => setCreating(true)}>
+            <Icon name="plus" /> New design system
+          </button>
         </div>
+        {creating && (
+          <NewDesignSystemModal
+            onClose={() => setCreating(false)}
+            onCreated={(s) => { setCreating(false); refresh(); onSelect?.(s.id); }} />
+        )}
         <div className="ds-grid">
           {systems.map((s) => (
             <button key={s.id} className="ds-card" onClick={() => onSelect?.(s.id)}>

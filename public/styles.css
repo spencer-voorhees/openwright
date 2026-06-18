@@ -405,6 +405,29 @@ a { color: var(--wp-link); }
   display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
 .ds-card-foot { margin-top: auto; }
 
+/* ── design-system creator: token form + live preview ── */
+.ds-new-modal { width: 720px; max-width: 94vw; }
+.ds-new-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 4px; }
+.ds-new-form { display: flex; flex-direction: column; gap: 7px; }
+.ds-new-form label { font-family: var(--um-font-mono); font-size: 11px; letter-spacing: .06em; color: var(--wp-fg-muted); text-transform: uppercase; margin-top: 6px; }
+.ds-accent-row { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.ds-swatch { width: 24px; height: 24px; border-radius: 7px; border: 2px solid transparent; cursor: pointer; padding: 0; }
+.ds-swatch.on { box-shadow: 0 0 0 2px var(--wp-elev), 0 0 0 4px var(--wp-fg); }
+.ds-color-input { width: 30px; height: 28px; padding: 0; border: 1px solid var(--wp-border-strong); border-radius: 7px; background: none; cursor: pointer; }
+.ds-new-modal select.field { appearance: none; -webkit-appearance: none; }
+.ds-new-preview { background: #F5F5F7; color: #1D1D1F; border-radius: var(--um-r-md); border: 1px solid var(--wp-border-strong); padding: 18px; display: flex; flex-direction: column; }
+.ds-prev-eyebrow { font-size: 9px; letter-spacing: .12em; text-transform: uppercase; color: var(--p-accent); font-weight: 700; }
+.ds-prev-title { font-size: 24px; font-weight: 700; letter-spacing: -.02em; color: #1D1D1F; margin-top: 7px; line-height: 1.05; }
+.ds-prev-bar { width: 38px; height: 4px; border-radius: 2px; background: var(--p-accent); margin: 11px 0; }
+.ds-prev-body { font-size: 12.5px; line-height: 1.5; color: #3A3A3C; margin: 0; }
+.ds-prev-body b { color: var(--p-accent); font-weight: 600; }
+.ds-prev-row { display: flex; gap: 8px; margin-top: 14px; }
+.ds-prev-btn { font-size: 11px; font-weight: 600; color: #fff; background: var(--p-accent); border-radius: 7px; padding: 6px 12px; }
+.ds-prev-pill { font-size: 11px; font-weight: 600; color: var(--p-deep); background: var(--p-tint); border: 1px solid var(--p-soft); border-radius: 999px; padding: 5px 11px; }
+.ds-prev-swatches { display: flex; gap: 5px; margin-top: auto; padding-top: 16px; }
+.ds-prev-swatches span { flex: 1; height: 16px; border-radius: 4px; border: 1px solid rgba(0,0,0,.08); }
+@media (max-width: 620px) { .ds-new-grid { grid-template-columns: 1fr; } }
+
 .ds-editor { display: flex; flex-direction: column; flex: 1 1 0; min-width: 0; height: 100%; }
 .ds-editor-head {
   display: flex; align-items: center; gap: 14px;
