@@ -15,9 +15,32 @@ const MAX_TURNS = parseInt(process.env.OPENWRIGHT_MAX_TURNS || "30", 10);
 
 // A deck/doc body (often 30KB+) is written in a single Write call, which
 // can blow past the Agent SDK's default 32K output-token cap and fail the
-// run ("Claude's response exceeded the 32000 output token maximum"). Raise
-// it to the current models' max unless the user set their own.
-process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS ||= "64000";
+// run ("Claude's response exceeded the 32000 output token maximum"). We
+// raise CLAUDE_CODE_MAX_OUTPUT_TOKENS to the SELECTED model's max per run
+// (the SDK exposes no per-call option), never above what the model allows.
+const USER_MAX_OUTPUT = process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS;  // honor an explicit user value
+
+// Max output tokens per model (synchronous Messages API; from the models
+// docs). Prefix-matched so dated snapshots resolve; unknown models fall
+// back to the SDK's safe 32K default. (The Models API also returns
+// max_tokens per model for a live lookup, but it needs an API key — the
+// Claude Code OAuth path can't call it.)
+const MODEL_MAX_OUTPUT: [string, number][] = [
+  ["claude-fable-5",    128000],
+  ["claude-mythos-5",   128000],
+  ["claude-opus-4-8",   128000],
+  ["claude-opus-4-7",   128000],
+  ["claude-opus-4-6",   128000],
+  ["claude-opus-4-5",    64000],
+  ["claude-opus-4-1",    32000],
+  ["claude-sonnet-4-6",  64000],
+  ["claude-sonnet-4-5",  64000],
+  ["claude-haiku-4-5",   64000],
+];
+function maxOutputFor(model: string): number {
+  for (const [prefix, max] of MODEL_MAX_OUTPUT) if (model.startsWith(prefix)) return max;
+  return 32000;  // SDK default — always safe
+}
 
 // Compact one-line summary of a tool invocation for the chat panel.
 function summarizeToolInput(name: string, input: any): string {
@@ -80,6 +103,13 @@ export const claudeAdapter: AgentAdapter = {
     const abortCtl = new AbortController();
     const onParentAbort = () => { try { abortCtl.abort(); } catch {} };
     opts.abortSignal.addEventListener("abort", onParentAbort, { once: true });
+
+    // Size the output cap to THIS run's model (unless the user pinned their
+    // own). Set synchronously right before query() — JS is single-threaded
+    // and the SDK reads the env at request construction, so concurrent runs
+    // with different models each see their own value.
+    const model = opts.model || DEFAULT_MODEL;
+    if (!USER_MAX_OUTPUT) process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS = String(maxOutputFor(model));
 
     let lastText = "";
     try {
