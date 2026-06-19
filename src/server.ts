@@ -694,14 +694,18 @@ async function listComments(artifact_id: string) {
 async function addComment(artifact_id: string, req: Request) {
   const a = db.query("SELECT * FROM artifacts WHERE id = ?").get(artifact_id) as any;
   if (!a) return err("artifact not found", 404);
-  const body = await req.json() as { slide_index?: number | null; body?: string };
+  const body = await req.json() as { slide_index?: number | null; slide_ref?: string | null; body?: string };
   if (!body.body || !body.body.trim()) return err("body required", 400);
   const slideIdx = (typeof body.slide_index === "number" && body.slide_index >= 0)
     ? body.slide_index : null;
+  // Snapshot of the slide's title at comment time — a stable anchor the agent
+  // can match on even after the deck is re-versioned and indices shift.
+  const slideRef = (typeof body.slide_ref === "string" && body.slide_ref.trim())
+    ? body.slide_ref.trim().slice(0, 120) : null;
   const ins = db.run(
-    `INSERT INTO comments (artifact_id, slide_index, body, status, created_at)
-     VALUES (?, ?, ?, 'open', ?)`,
-    [a.id, slideIdx, body.body.trim(), Date.now()],
+    `INSERT INTO comments (artifact_id, slide_index, slide_ref, body, status, created_at)
+     VALUES (?, ?, ?, ?, 'open', ?)`,
+    [a.id, slideIdx, slideRef, body.body.trim(), Date.now()],
   );
   const row = db.query("SELECT * FROM comments WHERE id = ?").get(Number(ins.lastInsertRowid));
   return json({ comment: row }, 201);

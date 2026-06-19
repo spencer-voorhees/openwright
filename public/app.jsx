@@ -1603,6 +1603,9 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted, e
   // quick-comment affordance targets the slide being viewed.
   const previewRef = useRef(null);
   const [curSlide, setCurSlide] = useState(0);
+  // Title of the slide currently in view, captured so a comment can anchor to
+  // the slide by content (not just a number that drifts as the deck changes).
+  const [curSlideLabel, setCurSlideLabel] = useState("");
   const [commentsBump, setCommentsBump] = useState(0);
   // The deck iframe pops in white when it finishes loading — fade it
   // in instead. Reset whenever the underlying generation changes (the
@@ -1636,6 +1639,7 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted, e
       if (e?.data?.type !== "workpod-slide") return;
       if (previewRef.current && e.source !== previewRef.current.contentWindow) return;
       if (typeof e.data.index === "number") setCurSlide(e.data.index);
+      if (typeof e.data.label === "string") setCurSlideLabel(e.data.label);
     };
     window.addEventListener("message", onMsg);
     return () => window.removeEventListener("message", onMsg);
@@ -1708,7 +1712,7 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted, e
                   style={{ opacity: previewLoaded ? 1 : 0,
                            transition: 'opacity 480ms var(--um-ease-out)' }} />
           {cur.artifact_id && (
-            <QuickComment artifactId={cur.artifact_id} slideIndex={curSlide} isDoc={isFlow}
+            <QuickComment artifactId={cur.artifact_id} slideIndex={curSlide} slideLabel={curSlideLabel} isDoc={isFlow}
                           onAdded={() => setCommentsBump((b) => b + 1)} />
           )}
           <div className="preview-controls">
@@ -1883,7 +1887,7 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted, e
 // Floating quick-comment affordance over the live preview — one click
 // to leave a note targeted at the slide currently being viewed (the
 // deck shell broadcasts the index to the parent).
-function QuickComment({ artifactId, slideIndex, onAdded, isDoc }) {
+function QuickComment({ artifactId, slideIndex, slideLabel, onAdded, isDoc }) {
   const [open, setOpen] = useState(false);
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
@@ -1895,7 +1899,7 @@ function QuickComment({ artifactId, slideIndex, onAdded, isDoc }) {
     setBusy(true);
     try {
       await postJson(`/api/artifacts/${artifactId}/comments`,
-        { slide_index: isDoc ? null : slideIndex, body: body.trim() });
+        { slide_index: isDoc ? null : slideIndex, slide_ref: isDoc ? null : (slideLabel || null), body: body.trim() });
       setBody("");
       setOpen(false);
       onAdded?.();
@@ -2096,7 +2100,8 @@ function CommentRow({ comment, onChange, disabled, onJump, isDoc }) {
   const [note, setNote] = useState("");
   const [draft, setDraft] = useState(comment.body);
   const where = (typeof comment.slide_index === "number" && comment.slide_index >= 0)
-    ? `Slide ${comment.slide_index + 1}` : (isDoc ? "Artifact" : "Deck");
+    ? (comment.slide_ref ? `Slide ${comment.slide_index + 1} · ${comment.slide_ref}` : `Slide ${comment.slide_index + 1}`)
+    : (isDoc ? "Artifact" : "Deck");
   const resolved = comment.status === "resolved";
   const addressed = comment.status === "addressed";
   // Editable only while still open (not folded into a run, not yet
@@ -2874,13 +2879,11 @@ function DesignSystems({ activeSystemId, onSelect, onBack }) {
 
 function DesignSystemEditor({ systemId, onBack, onChange }) {
   const [data, setData] = useState(null);
-  const [css, setCss] = useState("");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [previewKey, setPreviewKey] = useState(0);
-  const [editing, setEditing] = useState(false);   // false = preview only (default)
   const [themeOpen, setThemeOpen] = useState(false);   // visual token editor
   // What the preview pane shows: the token spec sheet (default), or a
   // worked example. The example can be either medium — a sub-picker
@@ -2892,7 +2895,6 @@ function DesignSystemEditor({ systemId, onBack, onChange }) {
   const load = useCallback(async () => {
     const d = await fetchJson(`/api/design-systems/${systemId}`);
     setData(d.design_system);
-    setCss(d.design_system.css || "");
     setName(d.design_system.name || "");
     setDescription(d.design_system.description || "");
     setDirty(false);
@@ -2903,7 +2905,7 @@ function DesignSystemEditor({ systemId, onBack, onChange }) {
     setSaving(true);
     try {
       await patchJson(`/api/design-systems/${systemId}`, {
-        css, name: name.trim(), description: description.trim() || null,
+        name: name.trim(), description: description.trim() || null,
       });
       setDirty(false);
       setPreviewKey((k) => k + 1);  // reload iframe with new CSS
@@ -2989,35 +2991,23 @@ function DesignSystemEditor({ systemId, onBack, onChange }) {
           ) : (
             <>
               {dirty && <span className="eyebrow" style={{ color: "var(--wp-warn)" }}>unsaved</span>}
-              <button className="btn btn-ghost" onClick={() => setThemeOpen(true)}
-                      title="Edit this system's colors and fonts visually">
+              <button className="btn btn-primary" onClick={() => setThemeOpen(true)}
+                      title="Edit this system's colors and fonts">
                 <Icon name="palette" /> Edit theme
-              </button>
-              <button className={"btn" + (editing ? " btn-primary" : " btn-ghost")}
-                      onClick={() => setEditing((e) => !e)}
-                      title={editing ? "Hide CSS editor (preview only)" : "Show CSS editor alongside preview"}>
-                <Icon name="code" /> {editing ? "Hide editor" : "Edit CSS"}
               </button>
               <button className="btn btn-ghost" onClick={remove}
                       title="Delete this design system">
                 <Icon name="trash-2" />
               </button>
-              <button className="btn btn-primary" onClick={save} disabled={!dirty || saving}>
+              <button className="btn btn-ghost" onClick={save} disabled={!dirty || saving}
+                      title="Save name / description changes">
                 <Icon name="save" /> {saving ? "saving…" : "Save"}
               </button>
             </>
           )}
         </div>
       </div>
-      <div className={"ds-editor-body" + (editing ? " is-editing" : " is-preview-only")}>
-        {editing && (
-          <div className="ds-css-pane">
-            <textarea className="ds-css"
-                      value={css}
-                      spellCheck={false}
-                      onChange={(e) => { setCss(e.target.value); setDirty(true); }} />
-          </div>
-        )}
+      <div className="ds-editor-body is-preview-only">
         <div className="ds-preview-pane">
           <iframe key={`${previewKey}-${view}`} src={previewUrl}
                   title="Design system preview"

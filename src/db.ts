@@ -137,6 +137,11 @@ addColumnIfMissing("design_systems", "css_spreadsheet",   "TEXT NOT NULL DEFAULT
 // Brand tokens (JSON) for token-themed systems — lets the visual editor
 // round-trip (prefill the form with current accent/fonts, re-theme on save).
 addColumnIfMissing("design_systems", "tokens",            "TEXT NOT NULL DEFAULT ''");
+// A comment's slide_index is a fragile anchor: as the deck is re-versioned,
+// slides get added/removed/reordered and the index drifts off the slide the
+// user meant. slide_ref captures the slide's title/label AT COMMENT TIME so
+// the agent can locate the right slide by content, not a stale number.
+addColumnIfMissing("comments",      "slide_ref",           "TEXT");
 // Authoring persona — drives the AGENT's writing voice. Default is
 // terse/technical; users can swap to executive-summary, detailed, or
 // mixed-audience via the workspace settings panel. Persona text gets
