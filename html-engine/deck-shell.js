@@ -1179,7 +1179,7 @@
         try { window.postMessage({ slideIndexChanged: curr, deckTotal: this._slides.length, deckSkipped: this._skippedIndices() }, '*'); } catch (e) {}
         // Host app (workpod) listens on the parent window so UI like the
         // quick-comment affordance can target the slide being viewed.
-        try { if (window.parent !== window) window.parent.postMessage({ type: 'workpod-slide', index: curr, total: this._slides.length }, '*'); } catch (e) {}
+        try { if (window.parent !== window) window.parent.postMessage({ type: 'workpod-slide', index: curr, total: this._slides.length, label: this._slides[curr] ? getSlideLabel(this._slides[curr]) : '' }, '*'); } catch (e) {}
 
         // (2) In-page CustomEvent on the <deck-stage> element itself.
         //     Bubbles and composes out of shadow DOM so slide code can listen:

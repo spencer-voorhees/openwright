@@ -1603,6 +1603,9 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted, e
   // quick-comment affordance targets the slide being viewed.
   const previewRef = useRef(null);
   const [curSlide, setCurSlide] = useState(0);
+  // Title of the slide currently in view, captured so a comment can anchor to
+  // the slide by content (not just a number that drifts as the deck changes).
+  const [curSlideLabel, setCurSlideLabel] = useState("");
   const [commentsBump, setCommentsBump] = useState(0);
   // The deck iframe pops in white when it finishes loading — fade it
   // in instead. Reset whenever the underlying generation changes (the
@@ -1636,6 +1639,7 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted, e
       if (e?.data?.type !== "workpod-slide") return;
       if (previewRef.current && e.source !== previewRef.current.contentWindow) return;
       if (typeof e.data.index === "number") setCurSlide(e.data.index);
+      if (typeof e.data.label === "string") setCurSlideLabel(e.data.label);
     };
     window.addEventListener("message", onMsg);
     return () => window.removeEventListener("message", onMsg);
@@ -1708,7 +1712,7 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted, e
                   style={{ opacity: previewLoaded ? 1 : 0,
                            transition: 'opacity 480ms var(--um-ease-out)' }} />
           {cur.artifact_id && (
-            <QuickComment artifactId={cur.artifact_id} slideIndex={curSlide} isDoc={isFlow}
+            <QuickComment artifactId={cur.artifact_id} slideIndex={curSlide} slideLabel={curSlideLabel} isDoc={isFlow}
                           onAdded={() => setCommentsBump((b) => b + 1)} />
           )}
           <div className="preview-controls">
@@ -1883,7 +1887,7 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted, e
 // Floating quick-comment affordance over the live preview — one click
 // to leave a note targeted at the slide currently being viewed (the
 // deck shell broadcasts the index to the parent).
-function QuickComment({ artifactId, slideIndex, onAdded, isDoc }) {
+function QuickComment({ artifactId, slideIndex, slideLabel, onAdded, isDoc }) {
   const [open, setOpen] = useState(false);
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
@@ -1895,7 +1899,7 @@ function QuickComment({ artifactId, slideIndex, onAdded, isDoc }) {
     setBusy(true);
     try {
       await postJson(`/api/artifacts/${artifactId}/comments`,
-        { slide_index: isDoc ? null : slideIndex, body: body.trim() });
+        { slide_index: isDoc ? null : slideIndex, slide_ref: isDoc ? null : (slideLabel || null), body: body.trim() });
       setBody("");
       setOpen(false);
       onAdded?.();
@@ -2096,7 +2100,8 @@ function CommentRow({ comment, onChange, disabled, onJump, isDoc }) {
   const [note, setNote] = useState("");
   const [draft, setDraft] = useState(comment.body);
   const where = (typeof comment.slide_index === "number" && comment.slide_index >= 0)
-    ? `Slide ${comment.slide_index + 1}` : (isDoc ? "Artifact" : "Deck");
+    ? (comment.slide_ref ? `Slide ${comment.slide_index + 1} · ${comment.slide_ref}` : `Slide ${comment.slide_index + 1}`)
+    : (isDoc ? "Artifact" : "Deck");
   const resolved = comment.status === "resolved";
   const addressed = comment.status === "addressed";
   // Editable only while still open (not folded into a run, not yet
@@ -2694,8 +2699,135 @@ function DesignSystemPicker({ ws, onChange }) {
   );
 }
 
+// ─── design-system brand tokens (client mirror of the server's math) ──
+// Export-safe font stacks (these map cleanly to PPTX/DOCX/XLSX).
+const DS_FONTS = [
+  { label: "Helvetica / Arial (Oneshot)", value: '"Helvetica Neue", Helvetica, Arial, sans-serif' },
+  { label: "Arial",                       value: "Arial, Helvetica, sans-serif" },
+  { label: "Verdana",                     value: "Verdana, Geneva, sans-serif" },
+  { label: "Tahoma",                      value: "Tahoma, Geneva, sans-serif" },
+  { label: "Segoe UI",                    value: '"Segoe UI", system-ui, sans-serif' },
+  { label: "Georgia (serif)",             value: "Georgia, serif" },
+  { label: "Cambria (serif)",             value: "Cambria, Georgia, serif" },
+  { label: "Times New Roman (serif)",     value: '"Times New Roman", Times, serif' },
+];
+const DS_ACCENTS = ["#0071E3", "#FF5A1F", "#1A8A3C", "#8E5AF2", "#D93025", "#0E7490", "#C026D3", "#B45309"];
+
+function dsHexToRgb(h) { h = h.replace("#", ""); return [parseInt(h.slice(0,2),16), parseInt(h.slice(2,4),16), parseInt(h.slice(4,6),16)]; }
+function dsRgbToHex(r,g,b) { const f = (x) => Math.round(Math.max(0,Math.min(255,x))).toString(16).padStart(2,"0"); return "#"+f(r)+f(g)+f(b); }
+// fg composited over bg at alpha a → an opaque hex (exports need solid fills).
+function dsOver(fg, bg, a) { const [r1,g1,b1]=dsHexToRgb(fg), [r2,g2,b2]=dsHexToRgb(bg); return dsRgbToHex(r1*a+r2*(1-a), g1*a+g2*(1-a), b1*a+b2*(1-a)); }
+function dsAccentFamily(accent) {
+  return {
+    accent,
+    accentDeep: dsOver("#000000", accent, 0.22),  // 22% black over accent
+    accentSoft: dsOver("#FFFFFF", accent, 0.28),  // 28% white over accent
+    accentTint: dsOver(accent, "#FFFFFF", 0.08),  // accent 8% over white (matches Oneshot)
+    accentWash: dsOver(accent, "#FFFFFF", 0.04),  // accent 4% over white (matches Oneshot)
+  };
+}
+
+// Guided token form: name + accent + fonts → a branded clone of Oneshot.
+// With `system`, edits an existing token-themed system (prefilled, saves
+// via PATCH which re-themes). Without, creates a new one.
+function DesignSystemModal({ system, onClose, onSaved }) {
+  const editing = !!system;
+  const init = (() => {
+    try {
+      if (system?.tokens) return JSON.parse(system.tokens);
+      // Fallback for systems themed before tokens were stored: read the
+      // override values out of the CSS (last occurrence wins = the override).
+      const css = system?.css || "";
+      const last = (k) => { const re = new RegExp(k + "\\s*:\\s*([^;]+);", "g"); let m, v = null; while ((m = re.exec(css))) v = m[1].trim(); return v; };
+      const accent = last("--accent");
+      if (accent && /^#[0-9a-fA-F]{6}$/.test(accent)) {
+        return { accent, fontDisplay: last("--font-display"), fontSans: last("--font-sans") };
+      }
+    } catch {}
+    return null;
+  })();
+  const [name, setName] = useState(editing ? (system.name || "") : "");
+  const [accent, setAccent] = useState(init?.accent || DS_ACCENTS[0]);
+  const [fontDisplay, setFontDisplay] = useState(init?.fontDisplay || DS_FONTS[0].value);
+  const [fontSans, setFontSans] = useState(init?.fontSans || DS_FONTS[0].value);
+  const [busy, setBusy] = useState(false);
+  const fam = dsAccentFamily(accent);
+  const submit = async (e) => {
+    e?.preventDefault();
+    if (!name.trim() || busy) return;
+    setBusy(true);
+    try {
+      const tokens = { ...fam, fontDisplay, fontSans };
+      const d = editing
+        ? await patchJson(`/api/design-systems/${system.id}`, { name: name.trim(), tokens })
+        : await postJson("/api/design-systems", { name: name.trim(), description: "Themed from Oneshot", tokens });
+      onSaved(d.design_system);
+    } catch (e) { alert("save failed: " + e.message); }
+    finally { setBusy(false); }
+  };
+  const previewVars = { "--p-accent": fam.accent, "--p-deep": fam.accentDeep, "--p-soft": fam.accentSoft, "--p-tint": fam.accentTint, "--p-wash": fam.accentWash };
+  return (
+    <div className="scrim" onClick={onClose}>
+      <form className="modal ds-new-modal" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
+        <h3>{editing ? "Edit theme" : "New design system"}</h3>
+        <p className="note-sub">{editing
+          ? "Tweak this system's colors and fonts. Saving re-themes it from Oneshot, so any manual CSS edits would be replaced."
+          : "A branded copy of Oneshot, same structure so results stay repeatable, just your colors and fonts. Edit the CSS later for deeper changes."}</p>
+        <div className="ds-new-grid">
+          <div className="ds-new-form">
+            <label>Name</label>
+            <input className="field" value={name} autoFocus placeholder="Acme Brand"
+                   onChange={(e) => setName(e.target.value)} />
+            <label>Accent</label>
+            <div className="ds-accent-row">
+              {DS_ACCENTS.map((c) => (
+                <button type="button" key={c} aria-label={c}
+                        className={"ds-swatch" + (c.toLowerCase() === accent.toLowerCase() ? " on" : "")}
+                        style={{ background: c }} onClick={() => setAccent(c)} />
+              ))}
+              <input type="color" className="ds-color-input" value={accent} onChange={(e) => setAccent(e.target.value)} />
+            </div>
+            <label>Display font</label>
+            <select className="field" value={fontDisplay} onChange={(e) => setFontDisplay(e.target.value)}>
+              {DS_FONTS.map((f) => <option key={f.label} value={f.value}>{f.label}</option>)}
+            </select>
+            <label>Body font</label>
+            <select className="field" value={fontSans} onChange={(e) => setFontSans(e.target.value)}>
+              {DS_FONTS.map((f) => <option key={f.label} value={f.value}>{f.label}</option>)}
+            </select>
+          </div>
+          <div className="ds-new-preview" style={previewVars}>
+            <div className="ds-prev-eyebrow" style={{ fontFamily: fontSans }}>Preview</div>
+            <div className="ds-prev-title" style={{ fontFamily: fontDisplay }}>Coverage up 38%</div>
+            <div className="ds-prev-bar"></div>
+            <p className="ds-prev-body" style={{ fontFamily: fontSans }}>A line of body text in your typeface, with an <b>accent</b> for punctuation.</p>
+            <div className="ds-prev-row">
+              <span className="ds-prev-btn" style={{ fontFamily: fontSans }}>Primary</span>
+              <span className="ds-prev-pill" style={{ fontFamily: fontSans }}>Tinted</span>
+            </div>
+            <div className="ds-prev-swatches">
+              <span style={{ background: fam.accentDeep }} title="deep"></span>
+              <span style={{ background: fam.accent }} title="accent"></span>
+              <span style={{ background: fam.accentSoft }} title="soft"></span>
+              <span style={{ background: fam.accentTint }} title="tint"></span>
+              <span style={{ background: fam.accentWash }} title="wash"></span>
+            </div>
+          </div>
+        </div>
+        <div className="modal-foot">
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button type="submit" className="btn btn-primary" disabled={busy || !name.trim()}>
+            <Icon name="check" /> {busy ? "Saving…" : editing ? "Save theme" : "Create"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 function DesignSystems({ activeSystemId, onSelect, onBack }) {
   const [systems, setSystems] = useState([]);
+  const [creating, setCreating] = useState(false);
   const refresh = useCallback(async () => {
     const d = await fetchJson("/api/design-systems");
     setSystems(d.design_systems || []);
@@ -2716,10 +2848,15 @@ function DesignSystems({ activeSystemId, onSelect, onBack }) {
             <h1 className="dash-title">Design systems</h1>
             <p className="dash-sub">Workspace-agnostic CSS bundles. Reference one from any workspace; edit here once, all referencing decks update on next reload.</p>
           </div>
-          {/* Creation is omitted until prompting an agent to build a
-              design system is actually wired up — a bare name prompt
-              that clones Oneshot read as "does nothing". */}
+          <button className="btn btn-primary" onClick={() => setCreating(true)}>
+            <Icon name="plus" /> New design system
+          </button>
         </div>
+        {creating && (
+          <DesignSystemModal
+            onClose={() => setCreating(false)}
+            onSaved={(s) => { setCreating(false); refresh(); onSelect?.(s.id); }} />
+        )}
         <div className="ds-grid">
           {systems.map((s) => (
             <button key={s.id} className="ds-card" onClick={() => onSelect?.(s.id)}>
@@ -2742,13 +2879,12 @@ function DesignSystems({ activeSystemId, onSelect, onBack }) {
 
 function DesignSystemEditor({ systemId, onBack, onChange }) {
   const [data, setData] = useState(null);
-  const [css, setCss] = useState("");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [previewKey, setPreviewKey] = useState(0);
-  const [editing, setEditing] = useState(false);   // false = preview only (default)
+  const [themeOpen, setThemeOpen] = useState(false);   // visual token editor
   // What the preview pane shows: the token spec sheet (default), or a
   // worked example. The example can be either medium — a sub-picker
   // inside the Example tab switches it. Pure display — no effect on
@@ -2759,7 +2895,6 @@ function DesignSystemEditor({ systemId, onBack, onChange }) {
   const load = useCallback(async () => {
     const d = await fetchJson(`/api/design-systems/${systemId}`);
     setData(d.design_system);
-    setCss(d.design_system.css || "");
     setName(d.design_system.name || "");
     setDescription(d.design_system.description || "");
     setDirty(false);
@@ -2770,7 +2905,7 @@ function DesignSystemEditor({ systemId, onBack, onChange }) {
     setSaving(true);
     try {
       await patchJson(`/api/design-systems/${systemId}`, {
-        css, name: name.trim(), description: description.trim() || null,
+        name: name.trim(), description: description.trim() || null,
       });
       setDirty(false);
       setPreviewKey((k) => k + 1);  // reload iframe with new CSS
@@ -2856,37 +2991,34 @@ function DesignSystemEditor({ systemId, onBack, onChange }) {
           ) : (
             <>
               {dirty && <span className="eyebrow" style={{ color: "var(--wp-warn)" }}>unsaved</span>}
-              <button className={"btn" + (editing ? " btn-primary" : " btn-ghost")}
-                      onClick={() => setEditing((e) => !e)}
-                      title={editing ? "Hide CSS editor (preview only)" : "Show CSS editor alongside preview"}>
-                <Icon name="code" /> {editing ? "Hide editor" : "Edit CSS"}
+              <button className="btn btn-primary" onClick={() => setThemeOpen(true)}
+                      title="Edit this system's colors and fonts">
+                <Icon name="palette" /> Edit theme
               </button>
               <button className="btn btn-ghost" onClick={remove}
                       title="Delete this design system">
                 <Icon name="trash-2" />
               </button>
-              <button className="btn btn-primary" onClick={save} disabled={!dirty || saving}>
+              <button className="btn btn-ghost" onClick={save} disabled={!dirty || saving}
+                      title="Save name / description changes">
                 <Icon name="save" /> {saving ? "saving…" : "Save"}
               </button>
             </>
           )}
         </div>
       </div>
-      <div className={"ds-editor-body" + (editing ? " is-editing" : " is-preview-only")}>
-        {editing && (
-          <div className="ds-css-pane">
-            <textarea className="ds-css"
-                      value={css}
-                      spellCheck={false}
-                      onChange={(e) => { setCss(e.target.value); setDirty(true); }} />
-          </div>
-        )}
+      <div className="ds-editor-body is-preview-only">
         <div className="ds-preview-pane">
           <iframe key={`${previewKey}-${view}`} src={previewUrl}
                   title="Design system preview"
                   sandbox="allow-scripts allow-same-origin" />
         </div>
       </div>
+      {themeOpen && (
+        <DesignSystemModal system={data}
+          onClose={() => setThemeOpen(false)}
+          onSaved={() => { setThemeOpen(false); load(); setPreviewKey((k) => k + 1); onChange?.(); }} />
+      )}
     </div>
   );
 }

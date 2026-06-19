@@ -30,12 +30,14 @@ function setStatus(gen_id: number, status: string, extra: Record<string, any> = 
   const keys = Object.keys(extra);
   const sets = ["status = ?", ...keys.map((k) => `${k} = ?`)].join(", ");
   db.run(`UPDATE generations SET ${sets} WHERE id = ?`, [status, ...keys.map((k) => extra[k]), gen_id]);
-  if (status === "done") markCommentsAddressed(gen_id);
 }
 
 // Open comments that existed when a generation started were folded
-// into its trigger as requirements — when the run completes, flip
-// them to 'addressed' so the user reviews and accepts or reopens.
+// into its trigger as requirements — flip them to 'addressed' so the
+// user reviews and accepts or reopens. Called ONLY when the run actually
+// did the work (wrote a new artifact version AND finished cleanly with
+// DONE:) — never on a cut-off or no-op run, which would silently bury the
+// user's feedback as "resolved" without applying any of it.
 function markCommentsAddressed(gen_id: number) {
   const g = db.query("SELECT artifact_id, started_at FROM generations WHERE id = ?").get(gen_id) as any;
   if (!g?.artifact_id || !g.started_at) return;
@@ -337,7 +339,13 @@ function extractAsk(text: string): string | null {
 }
 
 async function runAgentLoop(gen_id: number, workspace_id: number, sys: string, trigger: string,
-                            wsDir: string, specDir: string): Promise<{ path: string; version: number } | null> {
+                            wsDir: string, specDir: string):
+                            Promise<{ path: string; version: number; producedNew: boolean; finishedClean: boolean } | null> {
+  // Version on disk BEFORE this run, so we can tell whether the agent
+  // actually wrote a new one (real work) vs. left the prior version
+  // untouched (a confused / cut-off no-op that must not resolve comments).
+  const baseline = findLatestArtifact(specDir);
+  const baselineVersion = baseline ? inferVersion(baseline.name) : 0;
   // Engine + model are re-resolved from the workspace EVERY iteration:
   // each iteration is a fresh adapter session anyway (continuity lives
   // on disk), so a user who swaps engines mid-run — even while a
@@ -347,10 +355,15 @@ async function runAgentLoop(gen_id: number, workspace_id: number, sys: string, t
   let attempts = 0;
   let idleRetries = 0;
   let lastAgentMessage = "";
+  // True if the FINAL iteration ended on a hard cutoff (max-turns / timeout)
+  // rather than the agent finishing on its own. Reset each iteration so it
+  // reflects how the run actually ended, not an earlier turn.
+  let cutOff = false;
 
   while (nextPrompt && attempts < 4) {
     if (stopRequests.has(gen_id)) { stopRequests.delete(gen_id); throw new Error("stopped by user"); }
     attempts++;
+    cutOff = false;
 
     const wsNow = db.query("SELECT agent_engine, agent_model FROM workspaces WHERE id = ?").get(workspace_id) as any;
     const nowAdapter = getAdapter(wsNow?.agent_engine);
@@ -387,6 +400,9 @@ async function runAgentLoop(gen_id: number, workspace_id: number, sys: string, t
         if (ask) { askContent = ask; try { abortCtl.abort(); } catch {} return; }
         appendMessage(gen_id, "agent", e.text);
       } else {
+        // The adapter surfaces a max-turns stop as a system event — that's a
+        // hard cutoff, not the agent deciding it's done, so flag it.
+        if (e.kind === "system" && /turn limit/i.test(e.text)) cutOff = true;
         appendMessage(gen_id, "agent", e.text);
       }
     };
@@ -448,7 +464,18 @@ async function runAgentLoop(gen_id: number, workspace_id: number, sys: string, t
 
   const artifact = findLatestArtifact(specDir);
   if (!artifact) return null;
-  return { path: artifact.path, version: inferVersion(artifact.name) };
+  const version = inferVersion(artifact.name);
+  return {
+    path: artifact.path,
+    version,
+    // Did THIS run write a newer version than was on disk when it started?
+    producedNew: version > baselineVersion,
+    // Did the run end because the agent finished, vs. a hard cutoff
+    // (max-turns)? We deliberately do NOT require a literal "DONE:" prefix —
+    // agents often sign off with a natural-language summary, and gating on
+    // the marker left genuinely-finished runs' comments stranded open.
+    finishedClean: !cutOff,
+  };
 }
 
 export async function startGeneration(gen_id: number, opts: { fresh?: boolean } = {}): Promise<void> {
@@ -502,14 +529,15 @@ export async function startGeneration(gen_id: number, opts: { fresh?: boolean } 
   const versionPin = `Write the ${mediumNoun} to ${artifactDirRel}/${baseName}-v${nextVersion}.html. The HTML IS the deliverable — no separate build step. openwright renders it live in an iframe + exports to PDF / ${exportFmt} from the same source. v${nextVersion} is the next available integer above all existing files in ${artifactDirRel}/.`;
 
   const openComments = db.query(
-    `SELECT id, slide_index, body, created_at
+    `SELECT id, slide_index, slide_ref, body, created_at
      FROM comments WHERE artifact_id = ? AND status = 'open'
      ORDER BY slide_index IS NULL, slide_index, created_at`
   ).all(artifact.id) as any[];
   const commentsBlock = openComments.length
-    ? "\n\n# Outstanding comments to address\n\nThe user left specific comments on the prior version. Each one names a slide and a directive. Address every comment in this build. If a comment is no longer applicable (the slide changed structurally), explain why in your final summary. Do NOT silently skip them.\n\n" +
+    ? "\n\n# Outstanding comments to address\n\nThe user left specific comments on the prior version. Each names a target and a directive. The slide NUMBER is only a hint — slides may have been reordered since the comment was left, so trust the quoted slide title over the number and locate the slide by its content. Address every comment in this build. If a comment is genuinely no longer applicable (the slide it referred to was removed), explain why in your final summary. Do NOT silently skip them.\n\n" +
       openComments.map((c: any) => {
-        const where = (typeof c.slide_index === "number") ? `Slide ${c.slide_index + 1}` : "Deck-level";
+        const num = (typeof c.slide_index === "number") ? `Slide ${c.slide_index + 1}` : "Deck-level";
+        const where = c.slide_ref ? `${num}, titled “${c.slide_ref}”` : num;
         return `- [${where}] ${c.body}`;
       }).join("\n")
     : "";
@@ -535,6 +563,17 @@ If anything material is ambiguous (audience, scope, intended length, missing dat
     db.run("UPDATE generations SET artifact_path = ?, artifact_version = ? WHERE id = ?",
       [built.path, built.version, gen_id]);
     setStatus(gen_id, "done", { completed_at: Date.now() });
+    // Only fold open comments to 'addressed' if the run actually applied them:
+    // wrote a new version AND finished on its own (not a max-turns cutoff). A
+    // confused or cut-off run leaves them open for another pass.
+    if (built.producedNew && built.finishedClean) {
+      markCommentsAddressed(gen_id);
+    } else if (db.query("SELECT 1 FROM comments WHERE artifact_id = (SELECT artifact_id FROM generations WHERE id = ?) AND status = 'open' LIMIT 1").get(gen_id)) {
+      appendMessage(gen_id, "agent",
+        built.producedNew
+          ? "⚠ This run was cut off before finishing — leaving your comments open so they aren't marked resolved prematurely. Re-run to continue addressing them."
+          : "⚠ This run didn't produce a new version, so your comments are left open rather than marked resolved. Try re-running, or rephrase if a comment was unclear.");
+    }
   } catch (e: any) {
     setStatus(gen_id, "errored", { error: String(e?.message || e).slice(0, 500), completed_at: Date.now() });
     appendMessage(gen_id, "agent", `Run failed: ${String(e?.message || e).slice(0, 300)}`);

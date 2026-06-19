@@ -190,9 +190,46 @@ async function getDesignSystem(id: string) {
   return json({ design_system: row });
 }
 
+// Build a `:root { … }` override block from brand tokens. Values are
+// sanitized — hex colors and a safe font-stack charset only — so a token
+// can't break out of the declaration and inject CSS.
+function buildTokenOverride(tokens: any, name?: string): string {
+  if (!tokens || typeof tokens !== "object") return "";
+  const hex = (v: any) => typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v) ? v : null;
+  const font = (v: any) => typeof v === "string" && /^[A-Za-z0-9 ,"'\-]{1,80}$/.test(v) ? v : null;
+  const map: [string, string | null][] = [
+    ["--accent",       hex(tokens.accent)],
+    ["--accent-deep",  hex(tokens.accentDeep)],
+    ["--accent-soft",  hex(tokens.accentSoft)],
+    ["--accent-tint",  hex(tokens.accentTint)],
+    ["--accent-wash",  hex(tokens.accentWash)],
+    ["--font-display", font(tokens.fontDisplay)],
+    ["--font-sans",    font(tokens.fontSans)],
+  ];
+  const lines = map.filter(([, v]) => v).map(([k, v]) => `  ${k}: ${v};`);
+  // The specimen reads --system-name; carry the new name so it isn't "Oneshot".
+  const clean = (name || "").replace(/["'\\{};<>]/g, "").trim().slice(0, 60);
+  if (clean) lines.unshift(`  --system-name: "${clean}";`);
+  if (!lines.length) return "";
+  return `\n/* brand tokens — overrides Oneshot's :root, structure unchanged */\n:root {\n${lines.join("\n")}\n}\n`;
+}
+
+// Clone Oneshot across all three mediums and append the brand-token
+// override to each variant. Shared by create + visual-edit (re-theme).
+function themeFromOneshot(tokens: any, name: string): { css: string; doc: string; sheet: string } {
+  const os = db.query("SELECT css, css_document, css_spreadsheet FROM design_systems WHERE slug = 'oneshot'").get() as any;
+  const override = buildTokenOverride(tokens, name);
+  const head = `/* ${name} — themed from Oneshot via brand tokens. Structure intact for export fidelity. */\n`;
+  return {
+    css:   head + (os?.css || "") + override,
+    doc:   os?.css_document   ? head + os.css_document   + override : "",
+    sheet: os?.css_spreadsheet ? head + os.css_spreadsheet + override : "",
+  };
+}
+
 async function createDesignSystem(req: Request) {
-  const { name, css, description, from_id } = await req.json() as
-    { name: string; css?: string; description?: string; from_id?: number };
+  const { name, css, description, from_id, tokens } = await req.json() as
+    { name: string; css?: string; description?: string; from_id?: number; tokens?: any };
   if (!name || !name.trim()) return err("name required");
   let base = slugify(name.trim());
   if (!base) base = "system";
@@ -202,21 +239,34 @@ async function createDesignSystem(req: Request) {
     candidate = `${base}-${n++}`;
   }
   let cssContent = css ?? "";
-  // Optional clone-from: copy CSS from an existing system as starting point.
-  if (!cssContent && from_id) {
-    const src = db.query("SELECT css FROM design_systems WHERE id = ?").get(from_id) as any;
-    if (src) cssContent = src.css || "";
+  let docContent = "";
+  let sheetContent = "";
+  let tokensJson = "";
+
+  if (!cssContent && tokens) {
+    // Token-themed: clone Oneshot across all three mediums (same structure
+    // → repeatable, export-lossless). Stash the tokens so the visual editor
+    // can round-trip them.
+    const t = themeFromOneshot(tokens, name.trim());
+    cssContent = t.css; docContent = t.doc; sheetContent = t.sheet;
+    tokensJson = JSON.stringify(tokens);
+  } else if (!cssContent && from_id) {
+    // Optional clone-from: copy an existing system's variants as a start.
+    const src = db.query("SELECT css, css_document, css_spreadsheet FROM design_systems WHERE id = ?").get(from_id) as any;
+    if (src) { cssContent = src.css || ""; docContent = src.css_document || ""; sheetContent = src.css_spreadsheet || ""; }
   }
   if (!cssContent) {
-    // New systems start as a themed copy of Oneshot — it is the
-    // export-lossless baseline, so every derivative stays portable.
-    const oneshot = db.query("SELECT css FROM design_systems WHERE slug = 'oneshot'").get() as any;
-    cssContent = `/* ${name.trim()} — themed from Oneshot. Restyle via tokens; keep structural rules intact for export fidelity. */\n` + (oneshot?.css || "");
+    // Plain clone of Oneshot (all variants) when no css/tokens/from_id.
+    const os = db.query("SELECT css, css_document, css_spreadsheet FROM design_systems WHERE slug = 'oneshot'").get() as any;
+    const head = `/* ${name.trim()} — themed from Oneshot. Restyle via tokens; keep structural rules intact for export fidelity. */\n`;
+    cssContent   = head + (os?.css || "");
+    docContent   = os?.css_document   ? head + os.css_document   : "";
+    sheetContent = os?.css_spreadsheet ? head + os.css_spreadsheet : "";
   }
   const now = Date.now();
   const ins = db.run(
-    "INSERT INTO design_systems(name, slug, css, description, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?)",
-    [name.trim(), candidate, cssContent, description?.trim() || null, now, now]) as any;
+    "INSERT INTO design_systems(name, slug, css, css_document, css_spreadsheet, tokens, description, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    [name.trim(), candidate, cssContent, docContent, sheetContent, tokensJson, description?.trim() || null, now, now]) as any;
   return json({ design_system: db.query("SELECT * FROM design_systems WHERE id = ?").get(Number(ins.lastInsertRowid)) }, 201);
 }
 
@@ -224,11 +274,23 @@ async function updateDesignSystem(id: string, req: Request) {
   const row = db.query("SELECT * FROM design_systems WHERE id = ?").get(id) as any;
   if (!row) return err("not found", 404);
   if (row.builtin) return err("built-in design systems are read-only", 403);
-  const body = await req.json() as { name?: string; css?: string; description?: string };
+  const body = await req.json() as { name?: string; css?: string; description?: string; tokens?: any };
   const sets: string[] = [];
   const vals: any[] = [];
+  const newName = (body.name !== undefined && body.name.trim()) ? body.name.trim() : row.name;
   if (body.name !== undefined && body.name.trim()) { sets.push("name = ?"); vals.push(body.name.trim()); }
-  if (body.css !== undefined) { sets.push("css = ?"); vals.push(body.css); }
+  if (body.tokens) {
+    // Visual edit: regenerate the themed CSS across all variants from
+    // Oneshot + the new tokens (this replaces any prior CSS, including
+    // manual raw edits — the visual editor owns the whole theme).
+    const t = themeFromOneshot(body.tokens, newName);
+    sets.push("css = ?");             vals.push(t.css);
+    sets.push("css_document = ?");    vals.push(t.doc);
+    sets.push("css_spreadsheet = ?"); vals.push(t.sheet);
+    sets.push("tokens = ?");          vals.push(JSON.stringify(body.tokens));
+  } else if (body.css !== undefined) {
+    sets.push("css = ?"); vals.push(body.css);
+  }
   if (body.description !== undefined) { sets.push("description = ?"); vals.push(body.description); }
   if (sets.length === 0) return json({ design_system: row });
   sets.push("updated_at = ?"); vals.push(Date.now());
@@ -632,14 +694,18 @@ async function listComments(artifact_id: string) {
 async function addComment(artifact_id: string, req: Request) {
   const a = db.query("SELECT * FROM artifacts WHERE id = ?").get(artifact_id) as any;
   if (!a) return err("artifact not found", 404);
-  const body = await req.json() as { slide_index?: number | null; body?: string };
+  const body = await req.json() as { slide_index?: number | null; slide_ref?: string | null; body?: string };
   if (!body.body || !body.body.trim()) return err("body required", 400);
   const slideIdx = (typeof body.slide_index === "number" && body.slide_index >= 0)
     ? body.slide_index : null;
+  // Snapshot of the slide's title at comment time — a stable anchor the agent
+  // can match on even after the deck is re-versioned and indices shift.
+  const slideRef = (typeof body.slide_ref === "string" && body.slide_ref.trim())
+    ? body.slide_ref.trim().slice(0, 120) : null;
   const ins = db.run(
-    `INSERT INTO comments (artifact_id, slide_index, body, status, created_at)
-     VALUES (?, ?, ?, 'open', ?)`,
-    [a.id, slideIdx, body.body.trim(), Date.now()],
+    `INSERT INTO comments (artifact_id, slide_index, slide_ref, body, status, created_at)
+     VALUES (?, ?, ?, ?, 'open', ?)`,
+    [a.id, slideIdx, slideRef, body.body.trim(), Date.now()],
   );
   const row = db.query("SELECT * FROM comments WHERE id = ?").get(Number(ins.lastInsertRowid));
   return json({ comment: row }, 201);
