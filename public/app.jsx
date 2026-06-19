@@ -2747,6 +2747,7 @@ function DesignSystemModal({ system, onClose, onSaved }) {
     return null;
   })();
   const [name, setName] = useState(editing ? (system.name || "") : "");
+  const [description, setDescription] = useState(editing ? (system.description || "") : "Themed from Oneshot");
   const [accent, setAccent] = useState(init?.accent || DS_ACCENTS[0]);
   const [fontDisplay, setFontDisplay] = useState(init?.fontDisplay || DS_FONTS[0].value);
   const [fontSans, setFontSans] = useState(init?.fontSans || DS_FONTS[0].value);
@@ -2758,9 +2759,10 @@ function DesignSystemModal({ system, onClose, onSaved }) {
     setBusy(true);
     try {
       const tokens = { ...fam, fontDisplay, fontSans };
+      const desc = description.trim() || null;
       const d = editing
-        ? await patchJson(`/api/design-systems/${system.id}`, { name: name.trim(), tokens })
-        : await postJson("/api/design-systems", { name: name.trim(), description: "Themed from Oneshot", tokens });
+        ? await patchJson(`/api/design-systems/${system.id}`, { name: name.trim(), description: desc, tokens })
+        : await postJson("/api/design-systems", { name: name.trim(), description: desc, tokens });
       onSaved(d.design_system);
     } catch (e) { alert("save failed: " + e.message); }
     finally { setBusy(false); }
@@ -2771,13 +2773,16 @@ function DesignSystemModal({ system, onClose, onSaved }) {
       <form className="modal ds-new-modal" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
         <h3>{editing ? "Edit theme" : "New design system"}</h3>
         <p className="note-sub">{editing
-          ? "Tweak this system's colors and fonts. Saving re-themes it from Oneshot, so any manual CSS edits would be replaced."
-          : "A branded copy of Oneshot, same structure so results stay repeatable, just your colors and fonts. Edit the CSS later for deeper changes."}</p>
+          ? "Tweak this system's name, description, colors, and fonts. Saving re-themes it from Oneshot."
+          : "A branded copy of Oneshot, same structure so results stay repeatable, just your colors and fonts."}</p>
         <div className="ds-new-grid">
           <div className="ds-new-form">
             <label>Name</label>
             <input className="field" value={name} autoFocus placeholder="Acme Brand"
                    onChange={(e) => setName(e.target.value)} />
+            <label>Description</label>
+            <input className="field" value={description} placeholder="One-line description"
+                   onChange={(e) => setDescription(e.target.value)} />
             <label>Accent</label>
             <div className="ds-accent-row">
               {DS_ACCENTS.map((c) => (
@@ -2992,8 +2997,8 @@ function DesignSystemEditor({ systemId, onBack, onChange }) {
             <>
               {dirty && <span className="eyebrow" style={{ color: "var(--wp-warn)" }}>unsaved</span>}
               <button className="btn btn-primary" onClick={() => setThemeOpen(true)}
-                      title="Edit this system's colors and fonts">
-                <Icon name="palette" /> Edit theme
+                      title="Edit this system's name, description, colors, and fonts">
+                <Icon name="palette" /> Edit
               </button>
               <button className="btn btn-ghost" onClick={remove}
                       title="Delete this design system">
