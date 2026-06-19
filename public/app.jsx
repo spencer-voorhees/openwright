@@ -2701,15 +2701,24 @@ function DesignSystemPicker({ ws, onChange }) {
 
 // ─── design-system brand tokens (client mirror of the server's math) ──
 // Export-safe font stacks (these map cleanly to PPTX/DOCX/XLSX).
+// Only same-name cross-platform families: the export font-picker resolves a
+// stack against the render machine and writes that exact name into the
+// PPTX/DOCX/XLSX, with no per-platform name mapping. So a font must exist on
+// BOTH macOS and Windows under the same name, or it substitutes on the
+// recipient's machine. (Nicer / web fonts are tier 2 — they need embedding.)
 const DS_FONTS = [
   { label: "Helvetica / Arial (Oneshot)", value: '"Helvetica Neue", Helvetica, Arial, sans-serif' },
   { label: "Arial",                       value: "Arial, Helvetica, sans-serif" },
   { label: "Verdana",                     value: "Verdana, Geneva, sans-serif" },
   { label: "Tahoma",                      value: "Tahoma, Geneva, sans-serif" },
+  { label: "Trebuchet MS",                value: '"Trebuchet MS", "Segoe UI", sans-serif' },
   { label: "Segoe UI",                    value: '"Segoe UI", system-ui, sans-serif' },
   { label: "Georgia (serif)",             value: "Georgia, serif" },
   { label: "Cambria (serif)",             value: "Cambria, Georgia, serif" },
   { label: "Times New Roman (serif)",     value: '"Times New Roman", Times, serif' },
+  { label: "Arial Black (heavy)",         value: '"Arial Black", Arial, sans-serif' },
+  { label: "Impact (display)",            value: 'Impact, "Arial Black", sans-serif' },
+  { label: "Courier New (mono)",          value: '"Courier New", Courier, monospace' },
 ];
 const DS_ACCENTS = ["#0071E3", "#FF5A1F", "#1A8A3C", "#8E5AF2", "#D93025", "#0E7490", "#C026D3", "#B45309"];
 
