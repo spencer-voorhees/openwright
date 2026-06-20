@@ -1452,6 +1452,7 @@ function FilesPanel({ ws, files, notes, generations, artifacts, activeArtifactId
             artifactType={(artifacts.find((a) => a.id === activeArtifactId)?.artifact_type) || "deck"}
             artifacts={allArtifacts}
             runActive={wsRunActive}
+            designSystemId={ws.design_system_id}
             onOpen={(g) => onActivate(g.id)}
             onRefresh={onChange}
             onRunStarted={(genId) => { if (genId) onActivate(genId); onOpenAgent(); }} />
@@ -1591,7 +1592,7 @@ function NoteRow({ note, onEdit, onDelete }) {
   );
 }
 
-function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted, expanded, onToggleExpanded, artifactType }) {
+function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted, expanded, onToggleExpanded, artifactType, designSystemId }) {
   const isDoc = artifactType === "document";
   const isSheet = artifactType === "spreadsheet";
   // "Flow" mediums (document, spreadsheet) scroll, carry no slides, and
@@ -1681,7 +1682,7 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted, e
   const cur = pinnedId
     ? (artifacts.find((g) => g.id === pinnedId) || artifacts[0])
     : artifacts[0];
-  useEffect(() => { setPreviewLoaded(false); }, [cur?.id, cur?.artifact_path]);
+  useEffect(() => { setPreviewLoaded(false); }, [cur?.id, cur?.artifact_path, designSystemId]);
   if (!cur || !cur.artifact_path) return null;
   const latestId = artifacts[0]?.id;
   const isLatest = cur.id === latestId;
@@ -1706,7 +1707,7 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted, e
               place for comment rounds) — path alone never changes then,
               and the preview silently stayed stale until a manual
               refresh. */}
-          <iframe ref={previewRef} key={`${previewUrl}#${cur.id}`} src={`${previewUrl}?_g=${cur.id}`} title="Live preview"
+          <iframe ref={previewRef} key={`${previewUrl}#${cur.id}#${designSystemId}`} src={`${previewUrl}?_g=${cur.id}&_ds=${designSystemId}`} title="Live preview"
                   sandbox="allow-scripts allow-same-origin"
                   onLoad={() => setPreviewLoaded(true)}
                   style={{ opacity: previewLoaded ? 1 : 0,
