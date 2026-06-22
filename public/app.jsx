@@ -1767,15 +1767,20 @@ function diffBlocks(L, R) {
   while (j < m) ops.push({ t: "add", ai: -1, bi: j++ });
   return ops;
 }
-// Inset outline + light fill. The outline is drawn on top of content, so it
-// stays visible over an opaque image (a plain fill hid behind it); the
-// negative offset keeps it inside the box so neighbours don't collide; and
-// coalesceTargets keeps the count low so dense slides don't turn into a mess.
+// Outline + an ::after wash painted ON TOP of the element (content included),
+// so the tint shows over opaque images/cards instead of hiding behind them.
+// The wash is light (~15%) so text stays readable; the outline gives a crisp
+// edge. The element is made a positioning context in JS (static→relative only,
+// a layout no-op) so the absolute ::after anchors to it.
 const DIFF_HL_CSS = `
   .diff-hl { outline-offset: -2px !important; border-radius: 3px !important; }
-  .diff-hl-del { outline: 2px solid rgba(248,81,73,0.95) !important; background: rgba(248,81,73,0.16) !important; }
-  .diff-hl-add { outline: 2px solid rgba(63,185,80,0.95) !important; background: rgba(63,185,80,0.16) !important; }
-  .diff-hl-mod { outline: 2px solid rgba(88,166,255,0.95) !important; background: rgba(88,166,255,0.16) !important; }`;
+  .diff-hl::after { content: ""; position: absolute; inset: 0; pointer-events: none; border-radius: inherit; z-index: 2147483646; }
+  .diff-hl-del { outline: 2px solid rgba(248,81,73,0.95) !important; }
+  .diff-hl-del::after { background: rgba(248,81,73,0.16) !important; }
+  .diff-hl-add { outline: 2px solid rgba(63,185,80,0.95) !important; }
+  .diff-hl-add::after { background: rgba(63,185,80,0.16) !important; }
+  .diff-hl-mod { outline: 2px solid rgba(88,166,255,0.95) !important; }
+  .diff-hl-mod::after { background: rgba(88,166,255,0.16) !important; }`;
 function injectDiffStyle(doc) {
   if (doc.getElementById("diff-hl-style")) return;
   const s = doc.createElement("style");
@@ -1801,8 +1806,13 @@ function applyHighlights(leftDoc, rightDoc) {
   });
   const slides = new Set();
   const applyPane = (doc, entries) => {
+    const win = doc.defaultView;
     coalesceTargets(entries, doc.body).forEach((cls, el) => {
       el.classList.add("diff-hl", cls);
+      // The ::after wash needs `el` as its positioning context. Only promote
+      // static elements to relative (a layout no-op) — never touch elements
+      // already positioned, so absolutely-positioned deck pieces don't move.
+      try { if (win.getComputedStyle(el).position === "static") el.style.position = "relative"; } catch { /* noop */ }
       const si = sectionIndex(el);
       if (si >= 0) slides.add(si);
     });
