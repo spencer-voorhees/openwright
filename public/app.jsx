@@ -1819,7 +1819,12 @@ function applyHighlights(leftDoc, rightDoc) {
   };
   applyPane(leftDoc, leftEntries);
   applyPane(rightDoc, rightEntries);
-  return { add, del, mod, slides: [...slides].sort((a, b) => a - b) };
+  const leftCount = leftDoc.querySelectorAll("section").length;
+  const rightCount = rightDoc.querySelectorAll("section").length;
+  // A slide position past one deck's count exists only in the other version —
+  // surface those as added/removed stops so the panes never silently drift.
+  for (let i = Math.min(leftCount, rightCount); i < Math.max(leftCount, rightCount); i++) slides.add(i);
+  return { add, del, mod, leftCount, rightCount, slides: [...slides].sort((a, b) => a - b) };
 }
 // Group the text-token diff into slide sections so the "only changes" filter
 // can drop sections with no edits.
@@ -1855,6 +1860,7 @@ function DiffModal({ artifacts, initialCompareId, onClose }) {
   const [error, setError] = useState(null);
   const [sideStats, setSideStats] = useState(null);
   const [changedPtr, setChangedPtr] = useState(0);   // pointer into sideStats.slides for the changed-slide stepper
+  const [curSlide, setCurSlide] = useState(0);       // slide index both decks are currently showing
 
   const base = versions.find((g) => g.id === baseId);
   const comp = versions.find((g) => g.id === compareId);
@@ -1876,7 +1882,7 @@ function DiffModal({ artifacts, initialCompareId, onClose }) {
   // iframes finish loading (deck-shell has upgraded the slides by then).
   const leftRef = useRef(null), rightRef = useRef(null);
   const loadedRef = useRef({ l: false, r: false });
-  useEffect(() => { loadedRef.current = { l: false, r: false }; setSideStats(null); setChangedPtr(0); }, [mode, baseId, compareId]);
+  useEffect(() => { loadedRef.current = { l: false, r: false }; setSideStats(null); setChangedPtr(0); setCurSlide(0); }, [mode, baseId, compareId]);
   const onFrameLoad = (which) => {
     loadedRef.current[which] = true;
     if (!(loadedRef.current.l && loadedRef.current.r)) return;
@@ -1905,7 +1911,9 @@ function DiffModal({ artifacts, initialCompareId, onClose }) {
     let syncing = false;
     const onMsg = (e) => {
       const d = e.data;
-      if (!d || d.type !== "workpod-slide" || typeof d.index !== "number" || syncing) return;
+      if (!d || d.type !== "workpod-slide" || typeof d.index !== "number") return;
+      if (syncing) return;   // ignore the mirror's echo (incl. a clamped deck reporting a lower index)
+      setCurSlide(d.index);
       const lw = leftRef.current?.contentWindow, rw = rightRef.current?.contentWindow;
       const target = e.source === lw ? rw : e.source === rw ? lw : null;
       if (!target) return;
@@ -1934,6 +1942,16 @@ function DiffModal({ artifacts, initialCompareId, onClose }) {
   );
 
   const vlabel = (g) => `v${g.artifact_version || g.id} · ${fmtTime(g.completed_at)}`;
+
+  // Which slide the panes are showing. In stepper mode the target index is
+  // authoritative (a deck without that slide clamps and can't report it);
+  // otherwise trust the decks' own reports. A slide index past a deck's count
+  // means that version simply has no such slide → show a placeholder there.
+  const activeSlide = (mode === "side" && onlyChanges && changedSlides.length)
+    ? changedSlides[Math.min(changedPtr, changedSlides.length - 1)]
+    : curSlide;
+  const leftMissing = !!sideStats && activeSlide >= sideStats.leftCount;
+  const rightMissing = !!sideStats && activeSlide >= sideStats.rightCount;
 
   return (
     <div className="diff-overlay" onClick={onClose}>
@@ -1988,11 +2006,29 @@ function DiffModal({ artifacts, initialCompareId, onClose }) {
             <div className="diff-side">
               <div className="diff-pane">
                 <div className="diff-pane-label">{base && vlabel(base)}</div>
-                <iframe key={`l-${baseId}-${compareId}`} ref={leftRef} onLoad={() => onFrameLoad("l")} src={previewUrlFor(base)} title="base version" sandbox="allow-scripts allow-same-origin" />
+                <div className="diff-pane-body">
+                  <iframe key={`l-${baseId}-${compareId}`} ref={leftRef} onLoad={() => onFrameLoad("l")} src={previewUrlFor(base)} title="base version" sandbox="allow-scripts allow-same-origin" />
+                  {leftMissing && (
+                    <div className="diff-missing add">
+                      <Icon name="plus-circle" />
+                      <div>This slide is <b>new</b> in {comp && vlabel(comp)}</div>
+                      <span className="diff-key-note">no counterpart in this version</span>
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="diff-pane">
                 <div className="diff-pane-label">{comp && vlabel(comp)}</div>
-                <iframe key={`r-${baseId}-${compareId}`} ref={rightRef} onLoad={() => onFrameLoad("r")} src={previewUrlFor(comp)} title="compare version" sandbox="allow-scripts allow-same-origin" />
+                <div className="diff-pane-body">
+                  <iframe key={`r-${baseId}-${compareId}`} ref={rightRef} onLoad={() => onFrameLoad("r")} src={previewUrlFor(comp)} title="compare version" sandbox="allow-scripts allow-same-origin" />
+                  {rightMissing && (
+                    <div className="diff-missing del">
+                      <Icon name="minus-circle" />
+                      <div>This slide was <b>removed</b> in {comp && vlabel(comp)}</div>
+                      <span className="diff-key-note">it exists only in {base && vlabel(base)}</span>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </>
