@@ -1679,6 +1679,94 @@ function previewUrlFor(g) {
   return m ? `/preview/${m[1]}` : null;
 }
 
+// Element-level diff for the side-by-side highlight. Same leaf-block walk
+// as the text view, but we keep the live element handle plus a cheap
+// non-text fingerprint (tag + class + inline style) so a restyle with no
+// text change is still caught.
+const DIFF_BLOCK_SEL = "h1,h2,h3,h4,h5,h6,p,li,td,th,blockquote,figcaption,caption,dt,dd,div,header,footer";
+function blockText(el) {
+  const parts = [];
+  el.childNodes.forEach((n) => { const t = (n.textContent || "").replace(/\s+/g, " ").trim(); if (t) parts.push(t); });
+  return parts.join(" ").replace(/\s+/g, " ").trim();
+}
+function blockSig(el) {
+  return [el.tagName, el.getAttribute("class") || "", el.getAttribute("style") || ""].join("|");
+}
+function collectBlocks(root) {
+  const out = [];
+  root.querySelectorAll(DIFF_BLOCK_SEL).forEach((el) => {
+    if (el.querySelector(DIFF_BLOCK_SEL)) return;   // container — its leaves carry the text
+    const text = blockText(el);
+    if (!text) return;
+    out.push({ el, text, sig: blockSig(el) });
+  });
+  return out;
+}
+// LCS over block text, carrying source indices so ops map back to elements.
+function diffBlocks(L, R) {
+  const A = L.map((x) => x.text), B = R.map((x) => x.text);
+  const n = A.length, m = B.length;
+  const dp = []; for (let i = 0; i <= n; i++) dp.push(new Int32Array(m + 1));
+  for (let i = n - 1; i >= 0; i--)
+    for (let j = m - 1; j >= 0; j--)
+      dp[i][j] = A[i] === B[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+  const ops = []; let i = 0, j = 0;
+  while (i < n && j < m) {
+    if (A[i] === B[j]) { ops.push({ t: "eq", ai: i, bi: j }); i++; j++; }
+    else if (dp[i + 1][j] >= dp[i][j + 1]) { ops.push({ t: "del", ai: i, bi: -1 }); i++; }
+    else { ops.push({ t: "add", ai: -1, bi: j }); j++; }
+  }
+  while (i < n) ops.push({ t: "del", ai: i++, bi: -1 });
+  while (j < m) ops.push({ t: "add", ai: -1, bi: j++ });
+  return ops;
+}
+const DIFF_HL_CSS = `
+  .diff-hl { outline: 2px solid transparent; outline-offset: 1px; border-radius: 3px; }
+  .diff-hl-del { outline-color: #f85149 !important; background: rgba(248,81,73,0.20) !important; }
+  .diff-hl-add { outline-color: #3fb950 !important; background: rgba(63,185,80,0.20) !important; }
+  .diff-hl-mod { outline-color: #58a6ff !important; background: rgba(88,166,255,0.18) !important; }`;
+function injectDiffStyle(doc) {
+  if (doc.getElementById("diff-hl-style")) return;
+  const s = doc.createElement("style");
+  s.id = "diff-hl-style";
+  s.textContent = DIFF_HL_CSS;
+  (doc.head || doc.documentElement).appendChild(s);
+}
+// Tag changed elements in both live preview docs (red removed / green added /
+// blue restyled). Outline-based so it never shifts the deck's layout.
+function applyHighlights(leftDoc, rightDoc) {
+  injectDiffStyle(leftDoc); injectDiffStyle(rightDoc);
+  const L = collectBlocks(leftDoc.body), R = collectBlocks(rightDoc.body);
+  const ops = diffBlocks(L, R);
+  let add = 0, del = 0, mod = 0;
+  ops.forEach((o) => {
+    if (o.t === "del") { L[o.ai]?.el.classList.add("diff-hl", "diff-hl-del"); del++; }
+    else if (o.t === "add") { R[o.bi]?.el.classList.add("diff-hl", "diff-hl-add"); add++; }
+    else {
+      const le = L[o.ai], re = R[o.bi];
+      if (le && re && le.sig !== re.sig) { le.el.classList.add("diff-hl", "diff-hl-mod"); re.el.classList.add("diff-hl", "diff-hl-mod"); mod++; }
+    }
+  });
+  return { add, del, mod };
+}
+// Group the text-token diff into slide sections so the "only changes" filter
+// can drop sections with no edits.
+function groupRows(diff) {
+  const groups = [];
+  let cur = null;
+  (diff || []).forEach((o) => {
+    if (o.text.startsWith(DIFF_MARK)) {
+      cur = { marker: o, lines: [], changed: o.t !== "eq" };
+      groups.push(cur);
+    } else {
+      if (!cur) { cur = { marker: null, lines: [], changed: false }; groups.push(cur); }
+      cur.lines.push(o);
+      if (o.t !== "eq") cur.changed = true;
+    }
+  });
+  return groups;
+}
+
 function DiffModal({ artifacts, initialCompareId, onClose }) {
   // Only versions that actually produced an HTML artifact are comparable.
   const versions = useMemo(
@@ -1689,14 +1777,17 @@ function DiffModal({ artifacts, initialCompareId, onClose }) {
   const [compareId, setCompareId] = useState(versions[compIdx]?.id);
   const [baseId, setBaseId] = useState((versions[compIdx + 1] || versions[compIdx])?.id);
   const [mode, setMode] = useState("changes");   // 'changes' | 'side'
+  const [onlyChanges, setOnlyChanges] = useState(false);
   const [diff, setDiff] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [sideStats, setSideStats] = useState(null);
 
   const base = versions.find((g) => g.id === baseId);
   const comp = versions.find((g) => g.id === compareId);
   const same = baseId === compareId;
 
+  // Text diff (Changes view).
   useEffect(() => {
     if (mode !== "changes" || !base || !comp || same) return;
     let cancelled = false;
@@ -1708,6 +1799,20 @@ function DiffModal({ artifacts, initialCompareId, onClose }) {
     return () => { cancelled = true; };
   }, [mode, baseId, compareId, same]);
 
+  // Side-by-side element highlight: tag changed elements once BOTH preview
+  // iframes finish loading (deck-shell has upgraded the slides by then).
+  const leftRef = useRef(null), rightRef = useRef(null);
+  const loadedRef = useRef({ l: false, r: false });
+  useEffect(() => { loadedRef.current = { l: false, r: false }; setSideStats(null); }, [mode, baseId, compareId]);
+  const onFrameLoad = (which) => {
+    loadedRef.current[which] = true;
+    if (!(loadedRef.current.l && loadedRef.current.r)) return;
+    try {
+      const ld = leftRef.current?.contentDocument, rd = rightRef.current?.contentDocument;
+      if (ld?.body && rd?.body) setSideStats(applyHighlights(ld, rd));
+    } catch { /* same-origin, so this shouldn't throw — fail quietly if it does */ }
+  };
+
   const stats = useMemo(() => {
     if (!diff) return { add: 0, del: 0 };
     let add = 0, del = 0;
@@ -1717,6 +1822,12 @@ function DiffModal({ artifacts, initialCompareId, onClose }) {
     });
     return { add, del };
   }, [diff]);
+
+  const groups = useMemo(() => groupRows(diff), [diff]);
+  const visibleGroups = useMemo(
+    () => onlyChanges ? groups.filter((g) => g.changed) : groups,
+    [groups, onlyChanges],
+  );
 
   const vlabel = (g) => `v${g.artifact_version || g.id} · ${fmtTime(g.completed_at)}`;
 
@@ -1749,16 +1860,24 @@ function DiffModal({ artifacts, initialCompareId, onClose }) {
         {same ? (
           <div className="diff-empty">Pick two different versions to compare.</div>
         ) : mode === "side" ? (
-          <div className="diff-side">
-            <div className="diff-pane">
-              <div className="diff-pane-label">{base && vlabel(base)}</div>
-              <iframe src={previewUrlFor(base)} title="base version" sandbox="allow-scripts allow-same-origin" />
+          <>
+            <div className="diff-legend">
+              <span className="diff-key add">added</span>
+              <span className="diff-key del">removed</span>
+              <span className="diff-key mod">style changed</span>
+              {sideStats && <span className="diff-key-note">{sideStats.add} added · {sideStats.del} removed · {sideStats.mod} restyled · changes show as you flip to each slide</span>}
             </div>
-            <div className="diff-pane">
-              <div className="diff-pane-label">{comp && vlabel(comp)}</div>
-              <iframe src={previewUrlFor(comp)} title="compare version" sandbox="allow-scripts allow-same-origin" />
+            <div className="diff-side">
+              <div className="diff-pane">
+                <div className="diff-pane-label">{base && vlabel(base)}</div>
+                <iframe key={`l-${baseId}`} ref={leftRef} onLoad={() => onFrameLoad("l")} src={previewUrlFor(base)} title="base version" sandbox="allow-scripts allow-same-origin" />
+              </div>
+              <div className="diff-pane">
+                <div className="diff-pane-label">{comp && vlabel(comp)}</div>
+                <iframe key={`r-${compareId}`} ref={rightRef} onLoad={() => onFrameLoad("r")} src={previewUrlFor(comp)} title="compare version" sandbox="allow-scripts allow-same-origin" />
+              </div>
             </div>
-          </div>
+          </>
         ) : (
           <div className="diff-body">
             {loading && <div className="diff-empty">Computing differences…</div>}
@@ -1769,18 +1888,32 @@ function DiffModal({ artifacts, initialCompareId, onClose }) {
                   <span className="diff-stat add">+{stats.add}</span>
                   <span className="diff-stat del">−{stats.del}</span>
                   {stats.add === 0 && stats.del === 0 && <span className="diff-stat muted">No text changes between these versions.</span>}
+                  <label className="diff-only">
+                    <input type="checkbox" checked={onlyChanges} onChange={(e) => setOnlyChanges(e.target.checked)} />
+                    Only changed slides
+                  </label>
                 </div>
                 <div className="diff-lines">
-                  {diff.map((o, k) => o.text.startsWith(DIFF_MARK) ? (
-                    <div key={k} className={"diff-slide " + o.t}>
-                      {o.text.slice(DIFF_MARK.length)}{o.t === "add" ? " · new" : o.t === "del" ? " · removed" : ""}
-                    </div>
-                  ) : (
-                    <div key={k} className={"diff-line " + o.t}>
-                      <span className="diff-gutter">{o.t === "add" ? "+" : o.t === "del" ? "−" : ""}</span>
-                      <span className="diff-text">{o.text}</span>
-                    </div>
-                  ))}
+                  {visibleGroups.length === 0 ? (
+                    <div className="diff-empty">No changed slides.</div>
+                  ) : visibleGroups.map((grp, gi) => {
+                    const lines = onlyChanges ? grp.lines.filter((o) => o.t !== "eq") : grp.lines;
+                    return (
+                      <div key={gi}>
+                        {grp.marker && (
+                          <div className={"diff-slide " + grp.marker.t}>
+                            {grp.marker.text.slice(DIFF_MARK.length)}{grp.marker.t === "add" ? " · new" : grp.marker.t === "del" ? " · removed" : ""}
+                          </div>
+                        )}
+                        {lines.map((o, k) => (
+                          <div key={k} className={"diff-line " + o.t}>
+                            <span className="diff-gutter">{o.t === "add" ? "+" : o.t === "del" ? "−" : ""}</span>
+                            <span className="diff-text">{o.text}</span>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })}
                 </div>
               </>
             )}
