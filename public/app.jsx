@@ -3,7 +3,36 @@
    ported from the Claude Design prototype with wiring to the
    real REST API.
    ============================================================ */
-const { useState, useEffect, useMemo, useRef, useCallback } = React;
+const { useState, useEffect, useMemo, useRef, useCallback, useId } = React;
+
+// ─── popover state ──────────────────────────────────────────────
+// Shared open/close for every dropdown + popover. Two behaviors:
+//   1) click anywhere outside closes it (the panel itself stops
+//      propagation so clicks inside don't count);
+//   2) mutual exclusivity — opening one popover broadcasts a
+//      "popover-open" event that makes every other one close, so two
+//      menus can never overlap. Use `toggle` on the trigger button and
+//      spread `open`/`setOpen` as before.
+function usePopover() {
+  const id = useId();
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const onClickAway = () => setOpen(false);
+    const onOther = (e) => { if (e.detail !== id) setOpen(false); };
+    window.addEventListener("click", onClickAway);
+    window.addEventListener("popover-open", onOther);
+    return () => {
+      window.removeEventListener("click", onClickAway);
+      window.removeEventListener("popover-open", onOther);
+    };
+  }, [open, id]);
+  const toggle = () => {
+    if (!open) window.dispatchEvent(new CustomEvent("popover-open", { detail: id }));
+    setOpen((o) => !o);
+  };
+  return { open, setOpen, toggle };
+}
 
 // ─── lucide icon wrapper ────────────────────────────────────────
 // Renders an inline SVG by lucide name. Strokes inherit currentColor
@@ -1072,18 +1101,12 @@ function WorkspaceView({ slug, wsTab, setWsTab, onBack, onChange }) {
 // ═══════════════════════════════════════════════════════════════
 
 function WorkspaceSettingsButton({ ws, onChange, runActive }) {
-  const [open, setOpen] = useState(false);
-  useEffect(() => {
-    if (!open) return;
-    const close = () => setOpen(false);
-    window.addEventListener("click", close);
-    return () => window.removeEventListener("click", close);
-  }, [open]);
+  const { open, setOpen, toggle } = usePopover();
   return (
     <span className="ws-settings-wrap" onClick={(e) => e.stopPropagation()}>
       <button className="icon-btn ws-settings-btn"
               title="Workspace settings"
-              onClick={() => setOpen((o) => !o)}>
+              onClick={toggle}>
         <Icon name="settings" />
       </button>
       {open && (
@@ -1221,13 +1244,7 @@ function InlineDesignSystemSelect({ ws, onChange }) {
 }
 
 function ArtifactSelector({ ws, artifacts, activeArtifactId, onSelect, onChange, onNewArtifact, runActive }) {
-  const [open, setOpen] = useState(false);
-  useEffect(() => {
-    if (!open) return;
-    const close = () => setOpen(false);
-    window.addEventListener("click", close);
-    return () => window.removeEventListener("click", close);
-  }, [open]);
+  const { open, setOpen, toggle } = usePopover();
   const active = artifacts.find((a) => a.id === activeArtifactId);
   // While a run is in flight, the active artifact is locked — switching,
   // creating, renaming, or deleting mid-build would orphan the run.
@@ -1257,7 +1274,7 @@ function ArtifactSelector({ ws, artifacts, activeArtifactId, onSelect, onChange,
   return (
     <span className="ws-chip ws-chip-artifact on" onClick={(e) => e.stopPropagation()}>
       <Icon name={artifactTypeIcon(active?.artifact_type)} />
-      <button className="ws-chip-artifact-btn" onClick={() => setOpen((o) => !o)}>
+      <button className="ws-chip-artifact-btn" onClick={toggle}>
         {active ? active.name : "No artifact"}
         <Icon name="chevron-down" style={{ width: 10, height: 10, marginLeft: 4 }} />
       </button>
@@ -1598,7 +1615,7 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted, e
   // "Flow" mediums (document, spreadsheet) scroll, carry no slides, and
   // take artifact-level comments — unlike a slide deck.
   const isFlow = isDoc || isSheet;
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, toggle } = usePopover();
   // Current slide inside the preview iframe (0-based) — the deck shell
   // broadcasts workpod-slide messages on every slide change so the
   // quick-comment affordance targets the slide being viewed.
@@ -1665,12 +1682,6 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted, e
       setPinnedId(null);
     }
   }, [artifacts, pinnedId]);
-  useEffect(() => {
-    if (!open) return;
-    const close = () => setOpen(false);
-    window.addEventListener("click", close);
-    return () => window.removeEventListener("click", close);
-  }, [open]);
   useEffect(() => {
     // Iframe announces the first user keystroke after edit-mode is on
     // → flip dirty so Save/Discard become prominent.
@@ -1755,10 +1766,10 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted, e
                                              }}
                                              runActive={runActive} />}
         <div className="vsel" onClick={(e) => e.stopPropagation()}>
-          <button className="vsel-btn" onClick={() => setOpen((o) => !o)}>
+          <button className="vsel-btn" onClick={toggle}>
             <Icon name="history" style={{ width: 13, height: 13 }} />
             v{cur.artifact_version || cur.id}
-            <Icon name="chevron-down" style={{ width: 12, height: 12 }} />
+            <Icon name={open ? "chevron-up" : "chevron-down"} style={{ width: 12, height: 12 }} />
           </button>
           {open && (
             <div className="vhist">
@@ -1937,7 +1948,7 @@ function QuickComment({ artifactId, slideIndex, slideLabel, onAdded, isDoc }) {
 // agent's next run. Open comments get surfaced into the trigger
 // message as targeted requirements.
 function CommentsSection({ artifactId, wsSlug, refreshKey, onKickedOff, onJumpToSlide, runActive, isDoc }) {
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, toggle } = usePopover();
   const [comments, setComments] = useState([]);
   const [slideIdx, setSlideIdx] = useState("");   // string so blank means "deck-level"
   const [body, setBody] = useState("");
@@ -1975,17 +1986,9 @@ function CommentsSection({ artifactId, wsSlug, refreshKey, onKickedOff, onJumpTo
       await refresh();
     } finally { setBusy(false); }
   };
-  // Close when clicking anywhere outside the dropdown (the wrapper
-  // stops propagation, so inside-clicks survive).
-  useEffect(() => {
-    if (!open) return;
-    const close = () => setOpen(false);
-    window.addEventListener("click", close);
-    return () => window.removeEventListener("click", close);
-  }, [open]);
   return (
     <div className="vsel" onClick={(e) => e.stopPropagation()}>
-      <button className="vsel-btn" onClick={() => setOpen((o) => !o)} title="Comments — add, review, send to agent">
+      <button className="vsel-btn" onClick={toggle} title="Comments — add, review, send to agent">
         <Icon name="message-square" style={{ width: 13, height: 13 }} />
         Comments
         {openCount > 0 && <span className="comments-hub-badge">{openCount}</span>}
@@ -2580,19 +2583,13 @@ function ChatMessage({ msg }) {
 // All export targets under one button — six peer buttons in the bar
 // read as noise; one Export menu matches every editor users know.
 function ExportMenu({ genId, onDone, artifactType }) {
-  const [open, setOpen] = useState(false);
-  useEffect(() => {
-    if (!open) return;
-    const close = () => setOpen(false);
-    window.addEventListener("click", close);
-    return () => window.removeEventListener("click", close);
-  }, [open]);
+  const { open, setOpen, toggle } = usePopover();
   const isDoc = artifactType === "document";
   const isSheet = artifactType === "spreadsheet";
   return (
     <div className="vsel" onClick={(e) => e.stopPropagation()}>
-      <button className="btn btn-ghost" onClick={() => setOpen((o) => !o)}>
-        <Icon name="file-output" /> Export <Icon name="chevron-down" style={{ width: 12, height: 12 }} />
+      <button className="btn btn-ghost" onClick={toggle}>
+        <Icon name="file-output" /> Export <Icon name={open ? "chevron-up" : "chevron-down"} style={{ width: 12, height: 12 }} />
       </button>
       {open && (
         <div className="vhist export-menu">
