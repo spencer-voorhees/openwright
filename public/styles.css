@@ -1548,8 +1548,8 @@ select option { background-color: #161618; color: #f5f5f7; }
 
 /* version diff — placeholder when a slide exists in only one version */
 .diff-pane-body { position: relative; flex: 1; display: flex; min-height: 0; }
-.diff-missing { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center; padding: 24px; background: rgba(8,8,10,0.88); backdrop-filter: blur(3px); font-family: var(--um-font-mono); font-size: 13px; color: var(--wp-fg); line-height: 1.5; }
-.diff-missing svg { width: 28px; height: 28px; }
+.diff-missing { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 11px; text-align: center; padding: 24px; background: rgba(8,8,10,0.88); backdrop-filter: blur(3px); font-family: var(--um-font-mono); font-size: 13px; color: var(--wp-fg); line-height: 1.5; }
+.diff-missing svg { width: 28px; height: 28px; margin-bottom: 4px; }
 .diff-missing.add svg { color: #3fb950; }
 .diff-missing.del svg { color: #f85149; }
 .diff-missing .diff-key-note { color: var(--wp-fg-faint); margin-left: 0; }
