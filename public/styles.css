@@ -1412,7 +1412,10 @@ select option { background-color: #161618; color: #f5f5f7; }
 .pc-btn svg { width: 14px; height: 14px; }
 
 /* Export menu: stacked full-width actions */
-.export-menu { width: 240px; padding: 6px; display: flex; flex-direction: column; gap: 2px; }
+/* Open upward: the Export button sits in the toolbar below the preview,
+   so a downward menu spilled off the bottom of the viewport (user had to
+   scroll to reach options). Anchor above the button instead. */
+.export-menu { top: auto; bottom: calc(100% + 6px); width: 240px; padding: 6px; display: flex; flex-direction: column; gap: 2px; }
 .export-menu .btn { width: 100%; justify-content: flex-start; border: none; }
 .files-panel .files-body > .sec-label.expanded { max-width: none; }
 
