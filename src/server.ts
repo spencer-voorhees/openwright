@@ -1225,10 +1225,11 @@ function route(req: Request, url: URL): Promise<Response> | Response {
 
 Bun.serve({
   port: PORT,
-  // Loopback by default: a local tool should not listen on the LAN
-  // (also avoids the Windows Firewall prompt). OPENWRIGHT_HOST=0.0.0.0
-  // opts into network access (e.g. phone via Tailscale).
-  hostname: process.env.OPENWRIGHT_HOST || "127.0.0.1",
+  // Bind all interfaces by default so the rest of the local fleet
+  // (launcher tile, phone over LAN/Tailscale) can reach it like the
+  // other apps. OPENWRIGHT_HOST=127.0.0.1 restricts back to loopback
+  // (e.g. to dodge a Windows Firewall prompt).
+  hostname: process.env.OPENWRIGHT_HOST || "0.0.0.0",
   async fetch(req) {
     const url = new URL(req.url);
     // Logo tinted to the accent — the source svg is single-fill.
