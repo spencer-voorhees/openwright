@@ -1130,7 +1130,7 @@ textarea.field { resize: none; line-height: 1.5; }
   .artifact-head .vhist, .artifact-head .chist { left: 10px; right: 10px; width: auto; min-width: 0; }
   /* Desktop opens the comments hub upward over the tall preview; on
      mobile the bar sits high after scroll, so upward goes offscreen. */
-  .artifact-head .chist { bottom: auto; top: calc(100% + 6px); max-height: min(58vh, 480px); }
+  .artifact-head .chist, .artifact-head .vhist { bottom: auto; top: calc(100% + 6px); max-height: min(58vh, 480px); }
   .panel-head { position: relative; }
   .panel-head .ws-settings-wrap, .panel-head .ws-chip-artifact { position: static; }
   .panel-head .ws-settings-pop, .panel-head .vhist { left: 10px; right: 10px; width: auto; min-width: 0; max-width: none; }
@@ -1233,6 +1233,10 @@ textarea.field { resize: none; line-height: 1.5; }
   /* The artifact bar sits beneath a tall preview — open upward so the
      panel lands over the deck instead of below the fold. */
   bottom: calc(100% + 6px); top: auto; }
+/* Version history rides the same low artifact bar — open it upward over
+   the preview too (the long list previously dropped below the fold and
+   forced a scroll). Capped + scrollable via the base .vhist rule. */
+.artifact-head .vhist { bottom: calc(100% + 6px); top: auto; }
 .chist .comment-form { grid-template-columns: 84px 1fr; grid-auto-rows: auto; }
 .chist .comment-form .btn { grid-column: span 2; justify-content: center; }
 .comments-hub-badge {
