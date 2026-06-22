@@ -1708,6 +1708,39 @@ function collectBlocks(root) {
   });
   return out;
 }
+// Leaf blocks contained within `el` (the granularity collectBlocks tracks).
+function leavesIn(el) {
+  const out = [];
+  el.querySelectorAll(DIFF_BLOCK_SEL).forEach((c) => {
+    if (c.querySelector(DIFF_BLOCK_SEL)) return;
+    if (leafLabel(c)) out.push(c);
+  });
+  return out;
+}
+// Merge a cluster of same-type changed leaves into the highest ancestor whose
+// every leaf carries that same change — so a wholly-removed console becomes ONE
+// box, not 30 overlapping cell boxes, while an isolated stat stays precise.
+function coalesceTargets(entries, root) {
+  const changed = new Map(entries.map((e) => [e.el, e.cls]));
+  const allSame = (parent, cls) => {
+    const leaves = leavesIn(parent);
+    return leaves.length > 0 && leaves.every((l) => changed.get(l) === cls);
+  };
+  const targets = new Map();
+  const claimed = new Set();
+  entries.forEach(({ el, cls }) => {
+    if (claimed.has(el)) return;
+    let node = el;
+    while (node.parentElement && node.parentElement !== root && node.parentElement.tagName !== "BODY"
+           && allSame(node.parentElement, cls)) {
+      node = node.parentElement;
+    }
+    targets.set(node, cls);
+    leavesIn(node).forEach((l) => claimed.add(l));
+    claimed.add(node);
+  });
+  return targets;
+}
 // LCS over block text, carrying source indices so ops map back to elements.
 function diffBlocks(L, R) {
   const A = L.map((x) => x.text), B = R.map((x) => x.text);
@@ -1726,15 +1759,15 @@ function diffBlocks(L, R) {
   while (j < m) ops.push({ t: "add", ai: -1, bi: j++ });
   return ops;
 }
-// Fill only — no border/outline/glow. Slides are dense (every table cell and
-// stat is its own leaf block) and transform-scaled, so per-element borders
-// pile into overlapping rings. A translucent fill tiles cleanly: adjacent
-// changed cells read as one tinted region instead of a mess of boxes.
+// Inset outline + light fill. The outline is drawn on top of content, so it
+// stays visible over an opaque image (a plain fill hid behind it); the
+// negative offset keeps it inside the box so neighbours don't collide; and
+// coalesceTargets keeps the count low so dense slides don't turn into a mess.
 const DIFF_HL_CSS = `
-  .diff-hl { border-radius: 2px !important; }
-  .diff-hl-del { background: rgba(248,81,73,0.32) !important; }
-  .diff-hl-add { background: rgba(63,185,80,0.32) !important; }
-  .diff-hl-mod { background: rgba(88,166,255,0.30) !important; }`;
+  .diff-hl { outline-offset: -2px !important; border-radius: 3px !important; }
+  .diff-hl-del { outline: 2px solid rgba(248,81,73,0.95) !important; background: rgba(248,81,73,0.16) !important; }
+  .diff-hl-add { outline: 2px solid rgba(63,185,80,0.95) !important; background: rgba(63,185,80,0.16) !important; }
+  .diff-hl-mod { outline: 2px solid rgba(88,166,255,0.95) !important; background: rgba(88,166,255,0.16) !important; }`;
 function injectDiffStyle(doc) {
   if (doc.getElementById("diff-hl-style")) return;
   const s = doc.createElement("style");
@@ -1749,21 +1782,25 @@ function applyHighlights(leftDoc, rightDoc) {
   const L = collectBlocks(leftDoc.body), R = collectBlocks(rightDoc.body);
   const ops = diffBlocks(L, R);
   let add = 0, del = 0, mod = 0;
-  const slides = new Set();   // union of changed slide indices across both panes
-  const mark = (entry, cls) => {
-    if (!entry) return;
-    entry.el.classList.add("diff-hl", cls);
-    const si = sectionIndex(entry.el);
-    if (si >= 0) slides.add(si);
-  };
+  const leftEntries = [], rightEntries = [];
   ops.forEach((o) => {
-    if (o.t === "del") { mark(L[o.ai], "diff-hl-del"); del++; }
-    else if (o.t === "add") { mark(R[o.bi], "diff-hl-add"); add++; }
+    if (o.t === "del") { if (L[o.ai]) { leftEntries.push({ el: L[o.ai].el, cls: "diff-hl-del" }); del++; } }
+    else if (o.t === "add") { if (R[o.bi]) { rightEntries.push({ el: R[o.bi].el, cls: "diff-hl-add" }); add++; } }
     else {
       const le = L[o.ai], re = R[o.bi];
-      if (le && re && le.sig !== re.sig) { mark(le, "diff-hl-mod"); mark(re, "diff-hl-mod"); mod++; }
+      if (le && re && le.sig !== re.sig) { leftEntries.push({ el: le.el, cls: "diff-hl-mod" }); rightEntries.push({ el: re.el, cls: "diff-hl-mod" }); mod++; }
     }
   });
+  const slides = new Set();
+  const applyPane = (doc, entries) => {
+    coalesceTargets(entries, doc.body).forEach((cls, el) => {
+      el.classList.add("diff-hl", cls);
+      const si = sectionIndex(el);
+      if (si >= 0) slides.add(si);
+    });
+  };
+  applyPane(leftDoc, leftEntries);
+  applyPane(rightDoc, rightEntries);
   return { add, del, mod, slides: [...slides].sort((a, b) => a - b) };
 }
 // Group the text-token diff into slide sections so the "only changes" filter
@@ -1933,11 +1970,11 @@ function DiffModal({ artifacts, initialCompareId, onClose }) {
             <div className="diff-side">
               <div className="diff-pane">
                 <div className="diff-pane-label">{base && vlabel(base)}</div>
-                <iframe key={`l-${baseId}`} ref={leftRef} onLoad={() => onFrameLoad("l")} src={previewUrlFor(base)} title="base version" sandbox="allow-scripts allow-same-origin" />
+                <iframe key={`l-${baseId}-${compareId}`} ref={leftRef} onLoad={() => onFrameLoad("l")} src={previewUrlFor(base)} title="base version" sandbox="allow-scripts allow-same-origin" />
               </div>
               <div className="diff-pane">
                 <div className="diff-pane-label">{comp && vlabel(comp)}</div>
-                <iframe key={`r-${compareId}`} ref={rightRef} onLoad={() => onFrameLoad("r")} src={previewUrlFor(comp)} title="compare version" sandbox="allow-scripts allow-same-origin" />
+                <iframe key={`r-${baseId}-${compareId}`} ref={rightRef} onLoad={() => onFrameLoad("r")} src={previewUrlFor(comp)} title="compare version" sandbox="allow-scripts allow-same-origin" />
               </div>
             </div>
           </>
