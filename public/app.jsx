@@ -1726,14 +1726,15 @@ function diffBlocks(L, R) {
   while (j < m) ops.push({ t: "add", ai: -1, bi: j++ });
   return ops;
 }
-// Soft glow + fill rather than a hard 1-2px border: the deck scales slides
-// with transform, which makes thin borders snap to uneven per-side widths.
-// A blurred box-shadow has no measurable thickness, so it reads uniform.
+// Fill only — no border/outline/glow. Slides are dense (every table cell and
+// stat is its own leaf block) and transform-scaled, so per-element borders
+// pile into overlapping rings. A translucent fill tiles cleanly: adjacent
+// changed cells read as one tinted region instead of a mess of boxes.
 const DIFF_HL_CSS = `
-  .diff-hl { border-radius: 4px !important; }
-  .diff-hl-del { background: rgba(248,81,73,0.22) !important; box-shadow: 0 0 7px 2px rgba(248,81,73,0.75) !important; }
-  .diff-hl-add { background: rgba(63,185,80,0.22) !important; box-shadow: 0 0 7px 2px rgba(63,185,80,0.75) !important; }
-  .diff-hl-mod { background: rgba(88,166,255,0.20) !important; box-shadow: 0 0 7px 2px rgba(88,166,255,0.75) !important; }`;
+  .diff-hl { border-radius: 2px !important; }
+  .diff-hl-del { background: rgba(248,81,73,0.32) !important; }
+  .diff-hl-add { background: rgba(63,185,80,0.32) !important; }
+  .diff-hl-mod { background: rgba(88,166,255,0.30) !important; }`;
 function injectDiffStyle(doc) {
   if (doc.getElementById("diff-hl-style")) return;
   const s = doc.createElement("style");
@@ -1842,6 +1843,24 @@ function DiffModal({ artifacts, initialCompareId, onClose }) {
       gotoBoth(changedSlides[Math.min(changedPtr, changedSlides.length - 1)]);
     }
   }, [mode, onlyChanges, changedPtr, sideStats]);
+  // Keep both decks locked to the same slide: when either reports a slide
+  // change, mirror it to the other (a guard stops the echo from looping).
+  useEffect(() => {
+    if (mode !== "side") return;
+    let syncing = false;
+    const onMsg = (e) => {
+      const d = e.data;
+      if (!d || d.type !== "workpod-slide" || typeof d.index !== "number" || syncing) return;
+      const lw = leftRef.current?.contentWindow, rw = rightRef.current?.contentWindow;
+      const target = e.source === lw ? rw : e.source === rw ? lw : null;
+      if (!target) return;
+      syncing = true;
+      try { target.postMessage({ type: "workpod-goto", index: d.index }, "*"); } catch { /* noop */ }
+      setTimeout(() => { syncing = false; }, 60);
+    };
+    window.addEventListener("message", onMsg);
+    return () => window.removeEventListener("message", onMsg);
+  }, [mode, baseId, compareId]);
 
   const stats = useMemo(() => {
     if (!diff) return { add: 0, del: 0 };
