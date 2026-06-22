@@ -1623,17 +1623,32 @@ async function extractTokens(genId) {
   const res = await fetch(`/api/artifacts/${genId}`);
   if (!res.ok) throw new Error("artifact fetch failed");
   const doc = new DOMParser().parseFromString(await res.text(), "text/html");
-  const sel = "h1,h2,h3,h4,h5,h6,p,li,td,th,blockquote,figcaption,caption,dt,dd";
+  // Capture text at every "leaf block" — a block-level element with no
+  // block descendant. `div` is included because decks routinely hold
+  // their real content (e.g. stat cards: <div><span>63→16</span>…</div>)
+  // in styled divs, not just semantic tags. Inline children are joined
+  // with spaces so a stat reads "63→16 SERVERS TO MAINTAIN", not glued.
+  const BLOCK = "h1,h2,h3,h4,h5,h6,p,li,td,th,blockquote,figcaption,caption,dt,dd,div,header,footer";
   const sections = Array.from(doc.querySelectorAll("section"));
   const groups = sections.length ? sections : [doc.body];
   const tokens = [];
-  groups.forEach((grp, i) => {
-    tokens.push(DIFF_MARK + (sections.length ? `Slide ${i + 1}` : "Content"));
-    grp.querySelectorAll(sel).forEach((el) => {
-      if (el.querySelector(sel)) return;  // container — its leaf blocks are captured on their own
-      const t = (el.textContent || "").replace(/\s+/g, " ").trim();
-      if (t) tokens.push(t);
+  let slideNo = 0;
+  groups.forEach((grp) => {
+    const lines = [];
+    grp.querySelectorAll(BLOCK).forEach((el) => {
+      if (el.querySelector(BLOCK)) return;  // container — its leaf blocks carry the text
+      const parts = [];
+      el.childNodes.forEach((node) => {
+        const t = (node.textContent || "").replace(/\s+/g, " ").trim();
+        if (t) parts.push(t);
+      });
+      const line = parts.join(" ").replace(/\s+/g, " ").trim();
+      if (line) lines.push(line);
     });
+    // Skip empty/spacer sections so slide numbers track content slides.
+    if (!lines.length) return;
+    tokens.push(DIFF_MARK + (sections.length ? `Slide ${++slideNo}` : "Content"));
+    tokens.push(...lines);
   });
   return tokens;
 }
