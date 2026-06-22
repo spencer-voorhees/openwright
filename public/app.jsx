@@ -1717,9 +1717,11 @@ function leavesIn(el) {
   });
   return out;
 }
-// Merge a cluster of same-type changed leaves into the highest ancestor whose
-// every leaf carries that same change — so a wholly-removed console becomes ONE
-// box, not 30 overlapping cell boxes, while an isolated stat stays precise.
+// Merge a cluster of same-type changed leaves into a single box ONLY when it
+// collapses many fragments (e.g. a wholly-removed 33-cell console → one box).
+// Below the threshold we keep each changed item boxed on its own, so two
+// distinct stat cards stay two tight boxes instead of one loose region.
+const DIFF_MERGE_MIN = 6;
 function coalesceTargets(entries, root) {
   const changed = new Map(entries.map((e) => [e.el, e.cls]));
   const allSame = (parent, cls) => {
@@ -1735,9 +1737,15 @@ function coalesceTargets(entries, root) {
            && allSame(node.parentElement, cls)) {
       node = node.parentElement;
     }
-    targets.set(node, cls);
-    leavesIn(node).forEach((l) => claimed.add(l));
-    claimed.add(node);
+    const grouped = leavesIn(node);
+    if (node !== el && grouped.length >= DIFF_MERGE_MIN) {
+      targets.set(node, cls);                       // dense cluster → one box
+      grouped.forEach((l) => claimed.add(l));
+      claimed.add(node);
+    } else {
+      targets.set(el, cls);                         // few items → box this one precisely
+      claimed.add(el);
+    }
   });
   return targets;
 }
