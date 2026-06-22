@@ -1623,26 +1623,19 @@ async function extractTokens(genId) {
   const res = await fetch(`/api/artifacts/${genId}`);
   if (!res.ok) throw new Error("artifact fetch failed");
   const doc = new DOMParser().parseFromString(await res.text(), "text/html");
-  // Capture text at every "leaf block" — a block-level element with no
-  // block descendant. `div` is included because decks routinely hold
-  // their real content (e.g. stat cards: <div><span>63→16</span>…</div>)
-  // in styled divs, not just semantic tags. Inline children are joined
-  // with spaces so a stat reads "63→16 SERVERS TO MAINTAIN", not glued.
-  const BLOCK = "h1,h2,h3,h4,h5,h6,p,li,td,th,blockquote,figcaption,caption,dt,dd,div,header,footer";
+  // Walk every "leaf block" (a block-level element with no block descendant)
+  // via the shared selector + leafLabel — div is included (decks hold stats
+  // in styled divs) and images count via a filename surrogate, so an image
+  // swap/add is a real diff, not invisible.
   const sections = Array.from(doc.querySelectorAll("section"));
   const groups = sections.length ? sections : [doc.body];
   const tokens = [];
   let slideNo = 0;
   groups.forEach((grp) => {
     const lines = [];
-    grp.querySelectorAll(BLOCK).forEach((el) => {
-      if (el.querySelector(BLOCK)) return;  // container — its leaf blocks carry the text
-      const parts = [];
-      el.childNodes.forEach((node) => {
-        const t = (node.textContent || "").replace(/\s+/g, " ").trim();
-        if (t) parts.push(t);
-      });
-      const line = parts.join(" ").replace(/\s+/g, " ").trim();
+    grp.querySelectorAll(DIFF_BLOCK_SEL).forEach((el) => {
+      if (el.querySelector(DIFF_BLOCK_SEL)) return;  // container — its leaf blocks carry the text
+      const line = leafLabel(el);
       if (line) lines.push(line);
     });
     // Skip empty/spacer sections so slide numbers track content slides.
@@ -1684,10 +1677,23 @@ function previewUrlFor(g) {
 // non-text fingerprint (tag + class + inline style) so a restyle with no
 // text change is still caught.
 const DIFF_BLOCK_SEL = "h1,h2,h3,h4,h5,h6,p,li,td,th,blockquote,figcaption,caption,dt,dd,div,header,footer";
-function blockText(el) {
+function leafLabel(el) {
+  // Visible text of a leaf block; falls back to an image surrogate (by
+  // filename) so an image swap / add / removal registers instead of being
+  // invisible to a text-only diff.
   const parts = [];
   el.childNodes.forEach((n) => { const t = (n.textContent || "").replace(/\s+/g, " ").trim(); if (t) parts.push(t); });
-  return parts.join(" ").replace(/\s+/g, " ").trim();
+  let text = parts.join(" ").replace(/\s+/g, " ").trim();
+  if (!text) {
+    const img = el.querySelector("img");
+    if (img) text = "▦ " + ((img.getAttribute("src") || "image").split("/").pop().split("?")[0]);
+  }
+  return text;
+}
+function sectionIndex(el) {
+  const sec = el.closest && el.closest("section");
+  if (!sec) return -1;
+  return Array.prototype.indexOf.call(sec.ownerDocument.querySelectorAll("section"), sec);
 }
 function blockSig(el) {
   return [el.tagName, el.getAttribute("class") || "", el.getAttribute("style") || ""].join("|");
@@ -1696,7 +1702,7 @@ function collectBlocks(root) {
   const out = [];
   root.querySelectorAll(DIFF_BLOCK_SEL).forEach((el) => {
     if (el.querySelector(DIFF_BLOCK_SEL)) return;   // container — its leaves carry the text
-    const text = blockText(el);
+    const text = leafLabel(el);
     if (!text) return;
     out.push({ el, text, sig: blockSig(el) });
   });
@@ -1720,11 +1726,14 @@ function diffBlocks(L, R) {
   while (j < m) ops.push({ t: "add", ai: -1, bi: j++ });
   return ops;
 }
+// Soft glow + fill rather than a hard 1-2px border: the deck scales slides
+// with transform, which makes thin borders snap to uneven per-side widths.
+// A blurred box-shadow has no measurable thickness, so it reads uniform.
 const DIFF_HL_CSS = `
-  .diff-hl { outline: 2px solid transparent; outline-offset: 1px; border-radius: 3px; }
-  .diff-hl-del { outline-color: #f85149 !important; background: rgba(248,81,73,0.20) !important; }
-  .diff-hl-add { outline-color: #3fb950 !important; background: rgba(63,185,80,0.20) !important; }
-  .diff-hl-mod { outline-color: #58a6ff !important; background: rgba(88,166,255,0.18) !important; }`;
+  .diff-hl { border-radius: 4px !important; }
+  .diff-hl-del { background: rgba(248,81,73,0.22) !important; box-shadow: 0 0 7px 2px rgba(248,81,73,0.75) !important; }
+  .diff-hl-add { background: rgba(63,185,80,0.22) !important; box-shadow: 0 0 7px 2px rgba(63,185,80,0.75) !important; }
+  .diff-hl-mod { background: rgba(88,166,255,0.20) !important; box-shadow: 0 0 7px 2px rgba(88,166,255,0.75) !important; }`;
 function injectDiffStyle(doc) {
   if (doc.getElementById("diff-hl-style")) return;
   const s = doc.createElement("style");
@@ -1739,15 +1748,22 @@ function applyHighlights(leftDoc, rightDoc) {
   const L = collectBlocks(leftDoc.body), R = collectBlocks(rightDoc.body);
   const ops = diffBlocks(L, R);
   let add = 0, del = 0, mod = 0;
+  const slides = new Set();   // union of changed slide indices across both panes
+  const mark = (entry, cls) => {
+    if (!entry) return;
+    entry.el.classList.add("diff-hl", cls);
+    const si = sectionIndex(entry.el);
+    if (si >= 0) slides.add(si);
+  };
   ops.forEach((o) => {
-    if (o.t === "del") { L[o.ai]?.el.classList.add("diff-hl", "diff-hl-del"); del++; }
-    else if (o.t === "add") { R[o.bi]?.el.classList.add("diff-hl", "diff-hl-add"); add++; }
+    if (o.t === "del") { mark(L[o.ai], "diff-hl-del"); del++; }
+    else if (o.t === "add") { mark(R[o.bi], "diff-hl-add"); add++; }
     else {
       const le = L[o.ai], re = R[o.bi];
-      if (le && re && le.sig !== re.sig) { le.el.classList.add("diff-hl", "diff-hl-mod"); re.el.classList.add("diff-hl", "diff-hl-mod"); mod++; }
+      if (le && re && le.sig !== re.sig) { mark(le, "diff-hl-mod"); mark(re, "diff-hl-mod"); mod++; }
     }
   });
-  return { add, del, mod };
+  return { add, del, mod, slides: [...slides].sort((a, b) => a - b) };
 }
 // Group the text-token diff into slide sections so the "only changes" filter
 // can drop sections with no edits.
@@ -1782,6 +1798,7 @@ function DiffModal({ artifacts, initialCompareId, onClose }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [sideStats, setSideStats] = useState(null);
+  const [changedPtr, setChangedPtr] = useState(0);   // pointer into sideStats.slides for the changed-slide stepper
 
   const base = versions.find((g) => g.id === baseId);
   const comp = versions.find((g) => g.id === compareId);
@@ -1803,7 +1820,7 @@ function DiffModal({ artifacts, initialCompareId, onClose }) {
   // iframes finish loading (deck-shell has upgraded the slides by then).
   const leftRef = useRef(null), rightRef = useRef(null);
   const loadedRef = useRef({ l: false, r: false });
-  useEffect(() => { loadedRef.current = { l: false, r: false }; setSideStats(null); }, [mode, baseId, compareId]);
+  useEffect(() => { loadedRef.current = { l: false, r: false }; setSideStats(null); setChangedPtr(0); }, [mode, baseId, compareId]);
   const onFrameLoad = (which) => {
     loadedRef.current[which] = true;
     if (!(loadedRef.current.l && loadedRef.current.r)) return;
@@ -1812,6 +1829,19 @@ function DiffModal({ artifacts, initialCompareId, onClose }) {
       if (ld?.body && rd?.body) setSideStats(applyHighlights(ld, rd));
     } catch { /* same-origin, so this shouldn't throw — fail quietly if it does */ }
   };
+  // Changed-slide stepper: drive both decks to the same slide via the
+  // deck-shell's workpod-goto message so the toggle works in this view too.
+  const changedSlides = sideStats?.slides || [];
+  const gotoBoth = (slideIdx) => {
+    [leftRef, rightRef].forEach((r) => {
+      try { r.current?.contentWindow?.postMessage({ type: "workpod-goto", index: slideIdx }, "*"); } catch { /* noop */ }
+    });
+  };
+  useEffect(() => {
+    if (mode === "side" && onlyChanges && changedSlides.length) {
+      gotoBoth(changedSlides[Math.min(changedPtr, changedSlides.length - 1)]);
+    }
+  }, [mode, onlyChanges, changedPtr, sideStats]);
 
   const stats = useMemo(() => {
     if (!diff) return { add: 0, del: 0 };
@@ -1856,6 +1886,10 @@ function DiffModal({ artifacts, initialCompareId, onClose }) {
             <button className={"btn btn-ghost" + (mode === "changes" ? " on" : "")} onClick={() => setMode("changes")}>Changes</button>
             <button className={"btn btn-ghost" + (mode === "side" ? " on" : "")} onClick={() => setMode("side")}>Side by side</button>
           </div>
+          <label className="diff-only" title="Show only the slides that changed">
+            <input type="checkbox" checked={onlyChanges} onChange={(e) => setOnlyChanges(e.target.checked)} />
+            Only changed
+          </label>
         </div>
         {same ? (
           <div className="diff-empty">Pick two different versions to compare.</div>
@@ -1865,7 +1899,17 @@ function DiffModal({ artifacts, initialCompareId, onClose }) {
               <span className="diff-key add">added</span>
               <span className="diff-key del">removed</span>
               <span className="diff-key mod">style changed</span>
-              {sideStats && <span className="diff-key-note">{sideStats.add} added · {sideStats.del} removed · {sideStats.mod} restyled · changes show as you flip to each slide</span>}
+              {onlyChanges ? (
+                changedSlides.length ? (
+                  <span className="diff-stepper">
+                    <button className="btn btn-ghost" disabled={changedPtr <= 0} onClick={() => setChangedPtr((p) => Math.max(0, p - 1))}><Icon name="chevron-left" /></button>
+                    Changed slide {changedPtr + 1} / {changedSlides.length} <span className="diff-key-note">(slide {changedSlides[changedPtr] + 1})</span>
+                    <button className="btn btn-ghost" disabled={changedPtr >= changedSlides.length - 1} onClick={() => setChangedPtr((p) => Math.min(changedSlides.length - 1, p + 1))}><Icon name="chevron-right" /></button>
+                  </span>
+                ) : <span className="diff-key-note">{sideStats ? "No changed slides." : "Loading…"}</span>
+              ) : (
+                sideStats && <span className="diff-key-note">{sideStats.add} added · {sideStats.del} removed · {sideStats.mod} restyled · changes show as you flip to each slide</span>
+              )}
             </div>
             <div className="diff-side">
               <div className="diff-pane">
@@ -1888,10 +1932,6 @@ function DiffModal({ artifacts, initialCompareId, onClose }) {
                   <span className="diff-stat add">+{stats.add}</span>
                   <span className="diff-stat del">−{stats.del}</span>
                   {stats.add === 0 && stats.del === 0 && <span className="diff-stat muted">No text changes between these versions.</span>}
-                  <label className="diff-only">
-                    <input type="checkbox" checked={onlyChanges} onChange={(e) => setOnlyChanges(e.target.checked)} />
-                    Only changed slides
-                  </label>
                 </div>
                 <div className="diff-lines">
                   {visibleGroups.length === 0 ? (
