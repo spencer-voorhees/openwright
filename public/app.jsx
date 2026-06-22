@@ -1609,6 +1609,173 @@ function NoteRow({ note, onEdit, onDelete }) {
   );
 }
 
+// ─── version diff ───────────────────────────────────────────────
+// Compare two versions of an artifact. Fully client-side: we already
+// serve every version's rendered HTML (/preview/*) and its raw source
+// (/api/artifacts/:id), so the diff needs no backend or schema changes.
+const DIFF_MARK = " § ";  // sentinel prefix marking a slide/section boundary
+
+// Pull an ordered token stream of visible text out of a version's HTML.
+// Decks split into <section> slides; flow artifacts (doc/sheet) collapse
+// to one "Content" group. Slide boundaries ride along as marker tokens so
+// a single LCS pass aligns inserted/removed slides naturally.
+async function extractTokens(genId) {
+  const res = await fetch(`/api/artifacts/${genId}`);
+  if (!res.ok) throw new Error("artifact fetch failed");
+  const doc = new DOMParser().parseFromString(await res.text(), "text/html");
+  const sel = "h1,h2,h3,h4,h5,h6,p,li,td,th,blockquote,figcaption,caption,dt,dd";
+  const sections = Array.from(doc.querySelectorAll("section"));
+  const groups = sections.length ? sections : [doc.body];
+  const tokens = [];
+  groups.forEach((grp, i) => {
+    tokens.push(DIFF_MARK + (sections.length ? `Slide ${i + 1}` : "Content"));
+    grp.querySelectorAll(sel).forEach((el) => {
+      if (el.querySelector(sel)) return;  // container — its leaf blocks are captured on their own
+      const t = (el.textContent || "").replace(/\s+/g, " ").trim();
+      if (t) tokens.push(t);
+    });
+  });
+  return tokens;
+}
+
+// Classic LCS line diff → [{ t: 'eq'|'add'|'del', text }]. Inputs are
+// short (a deck's worth of text lines), so the O(n·m) table is fine.
+function lcsDiff(a, b) {
+  const n = a.length, m = b.length;
+  const dp = [];
+  for (let i = 0; i <= n; i++) dp.push(new Int32Array(m + 1));
+  for (let i = n - 1; i >= 0; i--)
+    for (let j = m - 1; j >= 0; j--)
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+  const ops = [];
+  let i = 0, j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) { ops.push({ t: "eq", text: a[i] }); i++; j++; }
+    else if (dp[i + 1][j] >= dp[i][j + 1]) { ops.push({ t: "del", text: a[i] }); i++; }
+    else { ops.push({ t: "add", text: b[j] }); j++; }
+  }
+  while (i < n) ops.push({ t: "del", text: a[i++] });
+  while (j < m) ops.push({ t: "add", text: b[j++] });
+  return ops;
+}
+
+function previewUrlFor(g) {
+  const m = normPath(g?.artifact_path || "").match(/\/workspaces\/(.+)$/);
+  return m ? `/preview/${m[1]}` : null;
+}
+
+function DiffModal({ artifacts, initialCompareId, onClose }) {
+  // Only versions that actually produced an HTML artifact are comparable.
+  const versions = useMemo(
+    () => artifacts.filter((g) => g.artifact_path && /\.html$/i.test(normPath(g.artifact_path))),
+    [artifacts],
+  );
+  const compIdx = Math.max(0, versions.findIndex((g) => g.id === initialCompareId));
+  const [compareId, setCompareId] = useState(versions[compIdx]?.id);
+  const [baseId, setBaseId] = useState((versions[compIdx + 1] || versions[compIdx])?.id);
+  const [mode, setMode] = useState("changes");   // 'changes' | 'side'
+  const [diff, setDiff] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const base = versions.find((g) => g.id === baseId);
+  const comp = versions.find((g) => g.id === compareId);
+  const same = baseId === compareId;
+
+  useEffect(() => {
+    if (mode !== "changes" || !base || !comp || same) return;
+    let cancelled = false;
+    setLoading(true); setError(null); setDiff(null);
+    Promise.all([extractTokens(base.id), extractTokens(comp.id)])
+      .then(([a, b]) => { if (!cancelled) setDiff(lcsDiff(a, b)); })
+      .catch(() => { if (!cancelled) setError("Couldn't load one of the versions."); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [mode, baseId, compareId, same]);
+
+  const stats = useMemo(() => {
+    if (!diff) return { add: 0, del: 0 };
+    let add = 0, del = 0;
+    diff.forEach((o) => {
+      if (o.text.startsWith(DIFF_MARK)) return;
+      if (o.t === "add") add++; else if (o.t === "del") del++;
+    });
+    return { add, del };
+  }, [diff]);
+
+  const vlabel = (g) => `v${g.artifact_version || g.id} · ${fmtTime(g.completed_at)}`;
+
+  return (
+    <div className="diff-overlay" onClick={onClose}>
+      <div className="diff-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="diff-head">
+          <div className="diff-title"><Icon name="git-compare" /> Compare versions</div>
+          <button className="icon-btn" onClick={onClose} title="Close"><Icon name="x" /></button>
+        </div>
+        <div className="diff-controls">
+          <label className="diff-pick">
+            <span className="eyebrow">Base</span>
+            <select value={baseId} onChange={(e) => setBaseId(Number(e.target.value))}>
+              {versions.map((g) => <option key={g.id} value={g.id}>{vlabel(g)}</option>)}
+            </select>
+          </label>
+          <Icon name="arrow-right" className="diff-arrow" />
+          <label className="diff-pick">
+            <span className="eyebrow">Compare</span>
+            <select value={compareId} onChange={(e) => setCompareId(Number(e.target.value))}>
+              {versions.map((g) => <option key={g.id} value={g.id}>{vlabel(g)}</option>)}
+            </select>
+          </label>
+          <div className="diff-modes">
+            <button className={"btn btn-ghost" + (mode === "changes" ? " on" : "")} onClick={() => setMode("changes")}>Changes</button>
+            <button className={"btn btn-ghost" + (mode === "side" ? " on" : "")} onClick={() => setMode("side")}>Side by side</button>
+          </div>
+        </div>
+        {same ? (
+          <div className="diff-empty">Pick two different versions to compare.</div>
+        ) : mode === "side" ? (
+          <div className="diff-side">
+            <div className="diff-pane">
+              <div className="diff-pane-label">{base && vlabel(base)}</div>
+              <iframe src={previewUrlFor(base)} title="base version" sandbox="allow-scripts allow-same-origin" />
+            </div>
+            <div className="diff-pane">
+              <div className="diff-pane-label">{comp && vlabel(comp)}</div>
+              <iframe src={previewUrlFor(comp)} title="compare version" sandbox="allow-scripts allow-same-origin" />
+            </div>
+          </div>
+        ) : (
+          <div className="diff-body">
+            {loading && <div className="diff-empty">Computing differences…</div>}
+            {error && <div className="diff-empty">{error}</div>}
+            {diff && !loading && !error && (
+              <>
+                <div className="diff-stats">
+                  <span className="diff-stat add">+{stats.add}</span>
+                  <span className="diff-stat del">−{stats.del}</span>
+                  {stats.add === 0 && stats.del === 0 && <span className="diff-stat muted">No text changes between these versions.</span>}
+                </div>
+                <div className="diff-lines">
+                  {diff.map((o, k) => o.text.startsWith(DIFF_MARK) ? (
+                    <div key={k} className={"diff-slide " + o.t}>
+                      {o.text.slice(DIFF_MARK.length)}{o.t === "add" ? " · new" : o.t === "del" ? " · removed" : ""}
+                    </div>
+                  ) : (
+                    <div key={k} className={"diff-line " + o.t}>
+                      <span className="diff-gutter">{o.t === "add" ? "+" : o.t === "del" ? "−" : ""}</span>
+                      <span className="diff-text">{o.text}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted, expanded, onToggleExpanded, artifactType, designSystemId }) {
   const isDoc = artifactType === "document";
   const isSheet = artifactType === "spreadsheet";
@@ -1616,6 +1783,7 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted, e
   // take artifact-level comments — unlike a slide deck.
   const isFlow = isDoc || isSheet;
   const { open, setOpen, toggle } = usePopover();
+  const [compareOpen, setCompareOpen] = useState(false);
   // Current slide inside the preview iframe (0-based) — the deck shell
   // broadcasts workpod-slide messages on every slide change so the
   // quick-comment affordance targets the slide being viewed.
@@ -1773,7 +1941,14 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted, e
           </button>
           {open && (
             <div className="vhist">
-              <div className="eyebrow" style={{ padding: "4px 8px 8px" }}>Version history</div>
+              <div className="vhist-head">
+                <span className="eyebrow">Version history</span>
+                {artifacts.length >= 2 && (
+                  <button className="vhist-compare" onClick={() => { setOpen(false); setCompareOpen(true); }}>
+                    <Icon name="git-compare" style={{ width: 12, height: 12 }} /> Compare
+                  </button>
+                )}
+              </div>
               {artifacts.map((g) => {
                 return (
                   <div className={"vrow" + (g.id === cur.id ? " cur" : "")} key={g.id}
@@ -1798,6 +1973,10 @@ function ArtifactCard({ artifacts, runActive, onOpen, onRefresh, onRunStarted, e
           )}
         </div>
       </div>
+      {compareOpen && (
+        <DiffModal artifacts={artifacts} initialCompareId={cur.id}
+                   onClose={() => setCompareOpen(false)} />
+      )}
       <div className="artifact-foot">
         <span className="fmeta" style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
           <span className="pdot s-ready" style={{ width: 7, height: 7, borderRadius: 999, display: "inline-block" }} />
