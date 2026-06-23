@@ -3241,6 +3241,7 @@ function DesignSystemModal({ system, onClose, onSaved }) {
   const [busy, setBusy] = useState(false);
   const [importing, setImporting] = useState(false);
   const [mode, setMode] = useState("build");   // "build" | "import" (create only)
+  const isImported = editing && !!(init && init.imported);  // colors/fonts came from a file
   const fam = dsAccentFamily(accent);
   // Import a design system straight from a reference deck/template: the
   // server parses the file's PowerPoint theme (colors + fonts) into brand
@@ -3264,11 +3265,19 @@ function DesignSystemModal({ system, onClose, onSaved }) {
     if (!name.trim() || busy) return;
     setBusy(true);
     try {
-      const tokens = { ...fam, fontDisplay, fontSans };
       const desc = description.trim() || null;
-      const d = editing
-        ? await patchJson(`/api/design-systems/${system.id}`, { name: name.trim(), description: desc, tokens })
-        : await postJson("/api/design-systems", { name: name.trim(), description: desc, tokens });
+      let d;
+      if (isImported) {
+        // Imported themes carry file-derived colors/fonts the form can't
+        // represent — only name/description are editable. Omit tokens so the
+        // server preserves the imported theme as-is.
+        d = await patchJson(`/api/design-systems/${system.id}`, { name: name.trim(), description: desc });
+      } else {
+        const tokens = { ...fam, fontDisplay, fontSans };
+        d = editing
+          ? await patchJson(`/api/design-systems/${system.id}`, { name: name.trim(), description: desc, tokens })
+          : await postJson("/api/design-systems", { name: name.trim(), description: desc, tokens });
+      }
       onSaved(d.design_system);
     } catch (e) { alert("save failed: " + e.message); }
     finally { setBusy(false); }
@@ -3279,7 +3288,11 @@ function DesignSystemModal({ system, onClose, onSaved }) {
       <form className="modal ds-new-modal" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
         <h3>{editing ? "Edit theme" : "New design system"}</h3>
         <p className="note-sub">{editing
-          ? "Tweak this system's name, description, colors, and fonts. Saving re-themes it from Oneshot."
+          ? (isImported
+            ? "This system's colors and fonts come from the imported file. You can rename it here; re-import a file to change the palette."
+            : "Tweak this system's name, description, colors, and fonts. Saving re-themes it from Oneshot.")
+          : mode === "import"
+          ? "Build a design system from a brand's colors and fonts — same Oneshot structure underneath, so results stay export-clean."
           : "A branded copy of Oneshot, same structure so results stay repeatable, just your colors and fonts."}</p>
         {!editing && (
           <div className="ds-mode">
@@ -3297,10 +3310,19 @@ function DesignSystemModal({ system, onClose, onSaved }) {
               <input type="file" accept=".pptx,.potx,.thmx" style={{ display: "none" }} disabled={importing}
                      onChange={(e) => { const f = e.target.files && e.target.files[0]; e.target.value = ""; importFromFile(f); }} />
             </label>
-            <p className="note-sub">Reads the file's PowerPoint theme directly, so the system matches the template's palette and fonts exactly.</p>
+            <p className="note-sub">Pulls the colors and fonts from the file's embedded theme (.pptx, .potx, or .thmx) — so the new system matches the source exactly.</p>
           </div>
         )}
-        <div className="ds-new-grid" style={(!editing && mode === "import") ? { display: "none" } : undefined}>
+        {isImported && (
+          <div className="ds-import-pane">
+            <label>Name</label>
+            <input className="field" value={name} autoFocus onChange={(e) => setName(e.target.value)} />
+            <label>Description</label>
+            <input className="field" value={description} placeholder="One-line description" onChange={(e) => setDescription(e.target.value)} />
+            <p className="note-sub">Colors and fonts were imported from a file and aren't editable here. To change them, import an updated file as a new system.</p>
+          </div>
+        )}
+        <div className="ds-new-grid" style={((!editing && mode === "import") || isImported) ? { display: "none" } : undefined}>
           <div className="ds-new-form">
             <label>Name</label>
             <input className="field" value={name} autoFocus placeholder="Acme Brand"

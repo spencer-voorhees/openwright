@@ -324,6 +324,7 @@ async function createDesignSystemFromReference(req: Request) {
   const major = slotFont("majorFont"), minor = slotFont("minorFont");
   if (major) tokens.fontDisplay = major;
   if (minor) tokens.fontSans = minor || major;
+  tokens.imported = true;   // colors/fonts came from a file → not form-editable
   const name = (((form?.get("name") as string) || origName).replace(/\.[^.]+$/, "") || "Imported theme").trim().slice(0, 60);
   let base = slugify(name) || "system", candidate = base, n = 2;
   while (db.query("SELECT 1 FROM design_systems WHERE slug = ?").get(candidate)) candidate = `${base}-${n++}`;
