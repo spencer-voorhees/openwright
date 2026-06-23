@@ -399,8 +399,9 @@ a { color: var(--wp-link); }
   transition: border-color var(--um-dur-fast), background var(--um-dur-fast);
 }
 .ds-card:hover { border-color: var(--wp-accent-line); background: var(--wp-accent-tint); }
-.ds-card-head { display: flex; justify-content: space-between; align-items: baseline; }
-.ds-name { font-size: 16px; font-weight: 600; color: var(--wp-fg); }
+.ds-card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.ds-name { font-size: 16px; font-weight: 600; color: var(--wp-fg); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ds-card-head .fmeta { flex: none; white-space: nowrap; }
 .ds-desc { font-size: 13px; color: var(--wp-fg-muted); line-height: 1.45; margin: 0;
   display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
 .ds-card-foot { margin-top: auto; }

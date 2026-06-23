@@ -3492,6 +3492,7 @@ function DesignSystemEditor({ systemId, onBack, onChange }) {
     if (!confirm(`Delete design system "${data.name}"? Workspaces referencing it must switch first.`)) return;
     try {
       await del(`/api/design-systems/${systemId}`);
+      onChange?.();   // refresh the list so the deleted system drops out immediately
       onBack();
     } catch (e) { alert("delete failed: " + e.message); }
   };
