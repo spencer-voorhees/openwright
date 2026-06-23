@@ -108,6 +108,16 @@
     border-radius: var(--r-md, 8px);
     background: var(--bg-soft, transparent);
   }
+
+  /* PDF export (chrome --print-to-pdf): keep each component whole — never
+     split a card / demo / row across a page. Sections (.doc) can still flow
+     across pages, but their component-level blocks stay intact, and a
+     heading never strands at the foot of a page. */
+  @media print {
+    .card, .demo, .type-row, .spec-field, .swatch, .chip, .progress,
+    .row, .grid > *, .badge, .avatar { break-inside: avoid; }
+    .section-title, .section-sub, .doc-head { break-after: avoid; }
+  }
 </style>
 </head>
 <body>
