@@ -1158,6 +1158,38 @@ async function saveEdits(gen_id: string, req: Request) {
   });
 }
 
+// Export a design system's specimen sheet (the showcase: type scale, color
+// swatches with hexes, component samples — rendered in the system's own CSS)
+// to a one-page PDF via chrome headless. Reuses the same print path as decks.
+async function exportSpecimenPdf(id: string) {
+  const ds = db.query("SELECT id, name, slug FROM design_systems WHERE id = ?").get(id) as any;
+  if (!ds) return err("design system not found", 404);
+  if (!CHROME_BIN) return err("No Chrome/Chromium found — set OPENWRIGHT_CHROME or run setup to install playwright chromium", 500);
+  const previewUrl = `http://127.0.0.1:${PORT}/preview/__design-system-preview/${ds.id}.html?mode=specimen`;
+  const outPath = join(tmpdir(), `ow-specimen-${ds.slug || ds.id}-${Date.now()}.pdf`);
+  const usingShell = !!CHROME?.headlessShell;
+  const proc = Bun.spawn({
+    cmd: [
+      CHROME_BIN,
+      ...(usingShell ? [] : ["--headless=new"]),
+      "--no-sandbox", "--disable-gpu", "--no-pdf-header-footer",
+      "--virtual-time-budget=15000",
+      `--print-to-pdf=${outPath}`,
+      previewUrl,
+    ],
+    stderr: "pipe", stdout: "pipe",
+  });
+  const code = await proc.exited;
+  if (code !== 0 || !existsSync(outPath)) {
+    const e = proc.stderr ? await new Response(proc.stderr).text() : "";
+    return err(`specimen pdf failed (exit ${code}): ${e.slice(-300)}`, 500);
+  }
+  const buf = await Bun.file(outPath).arrayBuffer();
+  try { unlinkSync(outPath); } catch { /* ignore */ }
+  const fname = `${ds.slug || "design-system"}-specimen.pdf`;
+  return new Response(buf, { headers: { "content-type": "application/pdf", "content-disposition": `attachment; filename="${fname}"` } });
+}
+
 async function exportPdf(gen_id: string) {
   const g = db.query("SELECT * FROM generations WHERE id = ?").get(gen_id) as any;
   if (!g || !g.artifact_path) return err("no artifact", 404);
@@ -1317,6 +1349,7 @@ function route(req: Request, url: URL): Promise<Response> | Response {
   if (path === "/api/design-systems" && req.method === "GET")  return listDesignSystems();
   if (path === "/api/design-systems" && req.method === "POST") return createDesignSystem(req);
   if (path === "/api/design-systems/from-reference" && req.method === "POST") return createDesignSystemFromReference(req);
+  if ((mt = m("/api/design-systems/(\\d+)/specimen\\.pdf")) && req.method === "GET") return exportSpecimenPdf(mt[1]);
   if ((mt = m("/api/design-systems/(\\d+)")) && req.method === "GET")    return getDesignSystem(mt[1]);
   if ((mt = m("/api/design-systems/(\\d+)")) && req.method === "PATCH")  return updateDesignSystem(mt[1], req);
   if ((mt = m("/api/design-systems/(\\d+)")) && req.method === "DELETE") return deleteDesignSystem(mt[1]);

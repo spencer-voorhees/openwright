@@ -3445,6 +3445,24 @@ function DesignSystemEditor({ systemId, onBack, onChange }) {
   // the system itself.
   const [view, setView] = useState("specimen");        // "specimen" | "example"
   const [exampleMedium, setExampleMedium] = useState("deck");  // "deck" | "document"
+  const [exportingPdf, setExportingPdf] = useState(false);
+
+  // Export the specimen sheet to PDF (chrome renders it server-side; ~15s).
+  const exportSpecimen = async () => {
+    if (exportingPdf) return;
+    setExportingPdf(true);
+    try {
+      const res = await fetch(`/api/design-systems/${systemId}/specimen.pdf`);
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `${(data && data.slug) || "design-system"}-specimen.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) { alert("specimen export failed: " + e.message); }
+    finally { setExportingPdf(false); }
+  };
 
   const load = useCallback(async () => {
     const d = await fetchJson(`/api/design-systems/${systemId}`);
@@ -3538,6 +3556,10 @@ function DesignSystemEditor({ systemId, onBack, onChange }) {
               )}
             </div>
           )}
+          <button className="btn btn-ghost" onClick={exportSpecimen} disabled={exportingPdf}
+                  title="Export this system's specimen sheet as a PDF">
+            <Icon name="file-down" /> {exportingPdf ? "Exporting…" : "Specimen PDF"}
+          </button>
           {builtin ? (
             <span className="ds-readonly" title="Built-in baseline — immutable in the app">
               <Icon name="lock" /> Built-in
