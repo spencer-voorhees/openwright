@@ -1187,6 +1187,105 @@ def hex_to_rgb(hex_str: str) -> RGBColor:
     return RGBColor(int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16))
 
 
+# ─── themed (re-themeable) mode ──────────────────────────────────────
+# With --theme-json, colors that match the design system's palette are
+# emitted as THEME COLOR references (schemeClr) and the heading/body fonts
+# as theme-font references, and the deck's theme part is populated with
+# that palette. Swapping the theme — or just its palette/fonts — in
+# PowerPoint then restyles the deck. THEME stays None in the default
+# pixel-faithful mode, so that path is byte-for-byte unchanged.
+from pptx.enum.dml import MSO_THEME_COLOR
+from lxml import etree
+
+THEME = None  # {"slots": {HEX: "ACCENT_1"}, "scheme": {"dk1": HEX, ...}, "fonts": {"major","minor"}}
+
+
+def _norm_hex(hex_str: str) -> str:
+    return hex_str.lstrip("#").upper()[:6]
+
+
+def _first_family(stack: str) -> str:
+    return (stack or "").split(",")[0].strip().strip('"').strip("'").lower()
+
+
+def theme_slot_for(hex_str: str):
+    """MSO_THEME_COLOR member when a hex matches a palette slot, else None."""
+    if not THEME:
+        return None
+    name = THEME["slots"].get(_norm_hex(hex_str))
+    return getattr(MSO_THEME_COLOR, name) if name else None
+
+
+def themed_solid_fill(shp, hex_str: str) -> None:
+    shp.fill.solid()
+    slot = theme_slot_for(hex_str)
+    if slot is not None:
+        shp.fill.fore_color.theme_color = slot
+    else:
+        shp.fill.fore_color.rgb = hex_to_rgb(hex_str)
+
+
+def themed_line_color(shp, hex_str: str) -> None:
+    slot = theme_slot_for(hex_str)
+    if slot is not None:
+        shp.line.color.theme_color = slot
+    else:
+        shp.line.color.rgb = hex_to_rgb(hex_str)
+
+
+def themed_run_color(run, hex_str: str) -> None:
+    slot = theme_slot_for(hex_str)
+    if slot is not None:
+        run.font.color.theme_color = slot
+    else:
+        run.font.color.rgb = hex_to_rgb(hex_str)
+
+
+def themed_font_name(family: str) -> str:
+    """'+mj-lt' / '+mn-lt' when the family is the DS heading/body font."""
+    if THEME:
+        fam = _first_family(family)
+        if fam and fam == _first_family(THEME["fonts"].get("major", "")):
+            return "+mj-lt"
+        if fam and fam == _first_family(THEME["fonts"].get("minor", "")):
+            return "+mn-lt"
+    return family
+
+
+def apply_theme_palette(prs) -> None:
+    """Populate the deck's theme part (clrScheme + fontScheme) from the DS."""
+    if not THEME:
+        return
+    from pptx.opc.constants import RELATIONSHIP_TYPE as RT
+    theme_part = prs.slide_masters[0].part.part_related_by(RT.THEME)
+    troot = etree.fromstring(theme_part.blob)      # base Part — edit the XML blob
+    te = troot.find(qn("a:themeElements"))
+    if te is None:
+        return
+    clr = te.find(qn("a:clrScheme"))
+    scheme = THEME.get("scheme", {})
+    if clr is not None:
+        for child in list(clr):                   # dk1 lt1 dk2 lt2 accent1-6 hlink folHlink
+            hexv = scheme.get(etree.QName(child).localname)
+            if not hexv:
+                continue
+            for c in list(child):
+                child.remove(c)                   # drop the existing sysClr/srgbClr
+            etree.SubElement(child, qn("a:srgbClr")).set("val", _norm_hex(hexv))
+    fonts = THEME.get("fonts", {})
+    fs = te.find(qn("a:fontScheme"))
+    if fs is not None:
+        for node_tag, key in (("a:majorFont", "major"), ("a:minorFont", "minor")):
+            fam = fonts.get(key)
+            node = fs.find(qn(node_tag))
+            if not fam or node is None:
+                continue
+            latin = node.find(qn("a:latin"))
+            if latin is not None:
+                latin.set("typeface", fam.split(",")[0].strip().strip('"').strip("'"))
+    theme_part._blob = etree.tostring(troot, xml_declaration=True, encoding="UTF-8", standalone=True)
+
+
 def px_to_emu(px: float) -> int:
     return int(px * PX_TO_EMU)
 
@@ -1295,6 +1394,7 @@ def emit_pptx(slides: list, out_path: Path, slide_w: int, slide_h: int) -> None:
     prs = Presentation()
     prs.slide_width  = Emu(px_to_emu(slide_w))
     prs.slide_height = Emu(px_to_emu(slide_h))
+    apply_theme_palette(prs)   # no-op unless --theme-json supplied
     blank = prs.slide_layouts[6]
 
     for s in slides:
@@ -1304,8 +1404,7 @@ def emit_pptx(slides: list, out_path: Path, slide_w: int, slide_h: int) -> None:
             bg_shape = slide.shapes.add_shape(
                 MSO_SHAPE.RECTANGLE, 0, 0,
                 prs.slide_width, prs.slide_height)
-            bg_shape.fill.solid()
-            bg_shape.fill.fore_color.rgb = hex_to_rgb(s["bg"])
+            themed_solid_fill(bg_shape, s["bg"])
             bg_shape.line.fill.background()
             strip_theme_style(bg_shape)
 
@@ -1351,12 +1450,11 @@ def emit_pptx(slides: list, out_path: Path, slide_w: int, slide_h: int) -> None:
                 if p.get("grad"):
                     apply_gradient_fill(shp, p["grad"])
                 elif p.get("fill"):
-                    shp.fill.solid()
-                    shp.fill.fore_color.rgb = hex_to_rgb(p["fill"])
+                    themed_solid_fill(shp, p["fill"])
                 else:
                     shp.fill.background()
                 if p.get("line") and p.get("line_w", 0) > 0.5:
-                    shp.line.color.rgb = hex_to_rgb(p["line"])
+                    themed_line_color(shp, p["line"])
                     shp.line.width = Pt(max(0.5, p["line_w"] * 0.75))
                 else:
                     shp.line.fill.background()
@@ -1393,7 +1491,7 @@ def emit_pptx(slides: list, out_path: Path, slide_w: int, slide_h: int) -> None:
                 for r_data in runs:
                     run = para.add_run()
                     run.text = r_data.get("text", "")
-                    run.font.name = r_data.get("font_family", "Helvetica")
+                    run.font.name = themed_font_name(r_data.get("font_family", "Helvetica"))
                     pt_size = max(6.0, r_data["font_size_px"] * 0.75)
                     run.font.size = Pt(pt_size)
                     if r_data.get("font_weight", 400) >= 600:
@@ -1402,7 +1500,7 @@ def emit_pptx(slides: list, out_path: Path, slide_w: int, slide_h: int) -> None:
                         run.font.italic = True
                     if r_data.get("underline"):
                         run.font.underline = True
-                    run.font.color.rgb = hex_to_rgb(r_data.get("color", "000000"))
+                    themed_run_color(run, r_data.get("color", "000000"))
                     # Kern above 12pt like browsers do — without this,
                     # large display numerals render with uneven glyph
                     # gaps (PowerPoint/Keynote default kerning off).
@@ -1432,7 +1530,12 @@ def main() -> int:
     ap.add_argument("--out", required=True, help="output .pptx path")
     ap.add_argument("--width",  type=int, default=1920)
     ap.add_argument("--height", type=int, default=1080)
+    ap.add_argument("--theme-json", help="path to a JSON theme map → re-themeable export")
     args = ap.parse_args()
+
+    if args.theme_json:
+        global THEME
+        THEME = json.loads(Path(args.theme_json).read_text(encoding="utf-8"))
 
     out_path = Path(args.out).resolve()
     out_path.parent.mkdir(parents=True, exist_ok=True)

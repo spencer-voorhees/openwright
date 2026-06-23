@@ -862,7 +862,37 @@ async function stopGen(gen_id: string) {
   return json({ ok: true, in_memory: inMemory });
 }
 
-async function exportPptxFromHtml(gen_id: string, mode: "dom" | "image" = "dom") {
+// Map a workspace's design-system palette → a PowerPoint theme map so the
+// "themed" export can emit theme color/font references (recolorable in
+// PowerPoint) instead of baking every value. Returns null if no DS.
+function buildThemeMap(workspaceId: number): any | null {
+  const ws = db.query("SELECT design_system_id FROM workspaces WHERE id = ?").get(workspaceId) as any;
+  const ds = db.query("SELECT css, tokens FROM design_systems WHERE id = ?").get(ws?.design_system_id || 1) as any;
+  if (!ds) return null;
+  const root = (String(ds.css || "").match(/:root\s*\{([\s\S]*?)\}/) || [])[1] || "";
+  const tok = (name: string) => {
+    const mm = root.match(new RegExp("--" + name + "\\s*:\\s*([^;]+);"));
+    return mm ? mm[1].trim() : null;
+  };
+  const hex = (v: string | null) => { const mm = v && v.match(/#([0-9a-fA-F]{6})/); return mm ? mm[1].toUpperCase() : null; };
+  let jt: any = {}; try { jt = ds.tokens ? JSON.parse(ds.tokens) : {}; } catch { /* ignore */ }
+  const fam = (v: string | null, fallback: string) => ((v || fallback).split(",")[0].replace(/["']/g, "").trim());
+  const ink = hex(tok("ink")) || "1D1D1F", white = hex(tok("white")) || "FFFFFF";
+  const graph = hex(tok("graphite")) || ink, paper = hex(tok("paper")) || white;
+  const acc = hex(jt.accent || tok("accent")) || "0071E3";
+  const accD = hex(jt.accentDeep || tok("accent-deep")) || acc;
+  const accS = hex(jt.accentSoft || tok("accent-soft")) || acc;
+  const stOk = hex(tok("st-available")) || "1A8A3C", stWarn = hex(tok("st-gated")) || "C97F00", neg = hex(tok("negative")) || "D93025";
+  const major = fam(jt.fontDisplay || tok("font-display"), "Helvetica Neue");
+  const minor = fam(jt.fontSans || tok("font-sans"), major);
+  return {
+    scheme: { dk1: ink, lt1: white, dk2: graph, lt2: paper, accent1: acc, accent2: accD, accent3: accS, accent4: stOk, accent5: stWarn, accent6: neg, hlink: acc, folHlink: accD },
+    slots: { [ink]: "TEXT_1", [white]: "BACKGROUND_1", [graph]: "TEXT_2", [paper]: "BACKGROUND_2", [acc]: "ACCENT_1", [accD]: "ACCENT_2", [accS]: "ACCENT_3", [stOk]: "ACCENT_4", [stWarn]: "ACCENT_5", [neg]: "ACCENT_6" },
+    fonts: { major, minor },
+  };
+}
+
+async function exportPptxFromHtml(gen_id: string, mode: "dom" | "image" | "themed" = "dom") {
   const g = db.query("SELECT * FROM generations WHERE id = ?").get(gen_id) as any;
   if (!g || !g.artifact_path) return err("no artifact", 404);
   g.artifact_path = resolveArtifact(g.artifact_path);
@@ -873,15 +903,23 @@ async function exportPptxFromHtml(gen_id: string, mode: "dom" | "image" = "dom")
   const m = String(g.artifact_path).replace(/\\/g, "/").match(/\/workspaces\/(.+)$/);
   if (!m) return err("could not derive preview path", 500);
   const previewUrl = `http://127.0.0.1:${PORT}/preview/${m[1]}`;
-  // image mode lands in a separate .image.pptx so it doesn't clobber
-  // the editable export. dom mode uses the canonical <base>.pptx.
-  const suffix = mode === "image" ? ".image.pptx" : ".pptx";
+  // image mode → .image.pptx; themed (re-themeable) → .themed.pptx; dom →
+  // the canonical <base>.pptx. Separate files so they never clobber.
+  const suffix = mode === "image" ? ".image.pptx" : mode === "themed" ? ".themed.pptx" : ".pptx";
   const outPath = g.artifact_path.replace(/\.html$/i, suffix);
-  const proc = Bun.spawn({
-    cmd: [PYTHON_BIN, script, "--url", previewUrl, "--out", outPath],
-    stderr: "pipe", stdout: "pipe",
-  });
+  const cmd = [PYTHON_BIN, script, "--url", previewUrl, "--out", outPath];
+  let themePath: string | null = null;
+  if (mode === "themed") {
+    const tmap = buildThemeMap(g.workspace_id);
+    if (tmap) {
+      themePath = outPath + ".theme.json";
+      await Bun.write(themePath, JSON.stringify(tmap));
+      cmd.push("--theme-json", themePath);
+    }
+  }
+  const proc = Bun.spawn({ cmd, stderr: "pipe", stdout: "pipe" });
   const exitCode = await proc.exited;
+  if (themePath) { try { unlinkSync(themePath); } catch { /* ignore */ } }
   if (exitCode !== 0 || !existsSync(outPath)) {
     const stderr = proc.stderr ? await new Response(proc.stderr).text() : "";
     return err(`pptx ${mode} export failed (exit ${exitCode}): ${stderr.slice(-500)}`, 500);
@@ -976,16 +1014,16 @@ function exportFilename(artifact_path: string, kind: string): string {
   const [, wsSlug, artSlug, file] = m;
   const stem = file.replace(/\.[^/.]+$/, "");
   const fileBase = artSlug && artSlug !== "untitled" ? `${wsSlug}-${artSlug}-${stem}` : `${wsSlug}-${stem}`;
-  return `${fileBase}.${kind === "pptx-image" ? "image.pptx" : kind}`;
+  return `${fileBase}.${kind === "pptx-image" ? "image.pptx" : kind === "pptx-themed" ? "themed.pptx" : kind}`;
 }
 
 // Serve an exported PDF/PPTX sibling of the gen's html artifact —
 // `<base>.pdf` / `<base>.pptx` next to the .html file.
-async function downloadExport(gen_id: string, kind: "pdf" | "pptx" | "pptx-image" | "docx" | "xlsx") {
+async function downloadExport(gen_id: string, kind: "pdf" | "pptx" | "pptx-image" | "pptx-themed" | "docx" | "xlsx") {
   const g = db.query("SELECT * FROM generations WHERE id = ?").get(gen_id) as any;
   if (!g || !g.artifact_path) return err("no artifact", 404);
   g.artifact_path = resolveArtifact(g.artifact_path);
-  const ext = kind === "pptx-image" ? ".image.pptx" : `.${kind}`;
+  const ext = kind === "pptx-image" ? ".image.pptx" : kind === "pptx-themed" ? ".themed.pptx" : `.${kind}`;
   const out = g.artifact_path.replace(/\.html$/i, ext);
   if (!existsSync(out)) return err(`no exported ${kind}`, 404);
   const friendly = exportFilename(out, kind);
@@ -1199,11 +1237,13 @@ function route(req: Request, url: URL): Promise<Response> | Response {
   if ((mt = m("/api/generations/(\\d+)/stop")) && req.method === "POST") return stopGen(mt[1]);
   if ((mt = m("/api/generations/(\\d+)/export-pptx")) && req.method === "POST") return exportPptxFromHtml(mt[1], "dom");
   if ((mt = m("/api/generations/(\\d+)/export-pptx-image")) && req.method === "POST") return exportPptxFromHtml(mt[1], "image");
+  if ((mt = m("/api/generations/(\\d+)/export-pptx-themed")) && req.method === "POST") return exportPptxFromHtml(mt[1], "themed");
   if ((mt = m("/api/generations/(\\d+)/export-docx")) && req.method === "POST") return exportDocxFromHtml(mt[1]);
   if ((mt = m("/api/generations/(\\d+)/export-xlsx")) && req.method === "POST") return exportXlsxFromHtml(mt[1]);
   if ((mt = m("/api/generations/(\\d+)/download-pdf")) && req.method === "GET") return downloadExport(mt[1], "pdf");
   if ((mt = m("/api/generations/(\\d+)/download-pptx")) && req.method === "GET") return downloadExport(mt[1], "pptx");
   if ((mt = m("/api/generations/(\\d+)/download-pptx-image")) && req.method === "GET") return downloadExport(mt[1], "pptx-image");
+  if ((mt = m("/api/generations/(\\d+)/download-pptx-themed")) && req.method === "GET") return downloadExport(mt[1], "pptx-themed");
   if ((mt = m("/api/generations/(\\d+)/download-docx")) && req.method === "GET") return downloadExport(mt[1], "docx");
   if ((mt = m("/api/generations/(\\d+)/download-xlsx")) && req.method === "GET") return downloadExport(mt[1], "xlsx");
   if ((mt = m("/api/artifacts/(\\d+)")) && req.method === "GET") return downloadArtifact(mt[1]);

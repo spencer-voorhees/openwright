@@ -3079,6 +3079,7 @@ function ExportMenu({ genId, onDone, artifactType }) {
             <>
               <ExportButton genId={genId} kind="pptx" onDone={onDone} />
               <ExportButton genId={genId} kind="pptx-image" onDone={onDone} />
+              <ExportButton genId={genId} kind="pptx-themed" onDone={onDone} />
             </>
           )}
           <a className="btn btn-ghost" href={`/api/artifacts/${genId}`}>
@@ -3103,6 +3104,8 @@ function ExportButton({ genId, kind, onDone }) {
                      icon: "file-edit",   title: "Editable PPTX — each visual is a real shape" },
     "pptx-image":  { busy: "image PPTX",  button: "Export PPTX (image)",
                      icon: "image",       title: "Pixel-perfect PPTX — each slide is one full-bleed image. Not editable." },
+    "pptx-themed": { busy: "themed PPTX", button: "Export PPTX (themed)",
+                     icon: "palette",     title: "Re-themeable PPTX — palette colors & fonts reference the deck theme, so you can recolor/refont in PowerPoint via Design > Variants. Non-palette colors stay fixed." },
     "docx":        { busy: "DOCX",        button: "Export DOCX",
                      icon: "file-edit",   title: "Editable Word document — headings, lists, tables, and callouts map to native Word constructs" },
     "xlsx":        { busy: "XLSX",        button: "Export XLSX",
