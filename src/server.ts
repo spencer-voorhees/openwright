@@ -270,6 +270,71 @@ async function createDesignSystem(req: Request) {
   return json({ design_system: db.query("SELECT * FROM design_systems WHERE id = ?").get(Number(ins.lastInsertRowid)) }, 201);
 }
 
+// Create a design system FROM a reference PowerPoint/theme file: parse the
+// file's theme (clrScheme + fontScheme) into brand tokens and theme Oneshot
+// from them. Exact match for a corporate brand template — no vision
+// guessing. Accepts .pptx / .potx / .thmx (all OPC zips).
+async function createDesignSystemFromReference(req: Request) {
+  const form = await req.formData().catch(() => null);
+  const file = form?.get("file");
+  if (!(file instanceof Blob)) return err("upload a .pptx/.potx/.thmx file as 'file'");
+  const origName = (file as any).name || "reference";
+  const tmp = join(tmpdir(), `ow-ref-${Date.now()}-${Math.floor(performance.now())}.zip`);
+  await Bun.write(tmp, file);
+  // Extract the theme part with Python's stdlib zipfile — `unzip` isn't on
+  // PATH on many machines (incl. Windows); the venv python always is.
+  const pyExtract = [
+    "import sys,zipfile",
+    "try: z=zipfile.ZipFile(sys.argv[1])",
+    "except Exception: sys.exit(0)",
+    "ns=[n for n in z.namelist() if n.lower().endswith('.xml') and 'theme' in n.lower()]",
+    "ns.sort(key=lambda n:(0 if n=='ppt/theme/theme1.xml' else 1 if n.endswith('theme1.xml') else 2,n))",
+    "for n in ns:",
+    "    try: d=z.read(n).decode('utf-8','replace')",
+    "    except Exception: continue",
+    "    if 'clrScheme' in d: sys.stdout.write(d); break",
+  ].join("\n");
+  const p = Bun.spawn({ cmd: [PYTHON_BIN, "-c", pyExtract, tmp], stdout: "pipe", stderr: "ignore" });
+  await p.exited;
+  const xml = await new Response(p.stdout).text();
+  try { unlinkSync(tmp); } catch { /* ignore */ }
+  if (!xml || !xml.includes("clrScheme")) return err("no theme found in file — expected a .pptx, .potx, or .thmx", 400);
+  const slotColor = (slot: string) => {
+    const b = xml.match(new RegExp(`<a:${slot}>([\\s\\S]*?)</a:${slot}>`));
+    const mm = b && (b[1].match(/<a:srgbClr val="([0-9A-Fa-f]{6})"/) || b[1].match(/lastClr="([0-9A-Fa-f]{6})"/));
+    return mm ? "#" + mm[1].toUpperCase() : null;
+  };
+  const slotFont = (slot: string) => {
+    const b = xml.match(new RegExp(`<a:${slot}>([\\s\\S]*?)</a:${slot}>`));
+    const mm = b && b[1].match(/<a:latin typeface="([^"]+)"/);
+    return mm && !mm[1].startsWith("+") ? mm[1] : null;
+  };
+  const chans = (h: string) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+  const toHex = (r: number, g: number, b: number) => "#" + [r, g, b].map((c) => Math.max(0, Math.min(255, Math.round(c))).toString(16).padStart(2, "0")).join("").toUpperCase();
+  const overWhite = (hex: string, a: number) => { const [r, g, b] = chans(hex); return toHex(r * a + 255 * (1 - a), g * a + 255 * (1 - a), b * a + 255 * (1 - a)); };
+  const darken = (hex: string, f: number) => { const [r, g, b] = chans(hex); return toHex(r * f, g * f, b * f); };
+  const accent = slotColor("accent1") || "#0071E3";
+  const tokens: any = {
+    accent,
+    accentDeep: slotColor("accent2") || darken(accent, 0.78),
+    accentSoft: slotColor("accent3") || overWhite(accent, 0.65),
+    accentTint: overWhite(accent, 0.08),
+    accentWash: overWhite(accent, 0.04),
+  };
+  const major = slotFont("majorFont"), minor = slotFont("minorFont");
+  if (major) tokens.fontDisplay = major;
+  if (minor) tokens.fontSans = minor || major;
+  const name = (((form?.get("name") as string) || origName).replace(/\.[^.]+$/, "") || "Imported theme").trim().slice(0, 60);
+  let base = slugify(name) || "system", candidate = base, n = 2;
+  while (db.query("SELECT 1 FROM design_systems WHERE slug = ?").get(candidate)) candidate = `${base}-${n++}`;
+  const t = themeFromOneshot(tokens, name);
+  const now = Date.now();
+  const ins = db.run(
+    "INSERT INTO design_systems(name, slug, css, css_document, css_spreadsheet, tokens, description, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    [name, candidate, t.css, t.doc, t.sheet, JSON.stringify(tokens), `Imported from ${origName}`, now, now]) as any;
+  return json({ design_system: db.query("SELECT * FROM design_systems WHERE id = ?").get(Number(ins.lastInsertRowid)), tokens }, 201);
+}
+
 async function updateDesignSystem(id: string, req: Request) {
   const row = db.query("SELECT * FROM design_systems WHERE id = ?").get(id) as any;
   if (!row) return err("not found", 404);
@@ -759,7 +824,7 @@ async function downloadArtifact(gen_id: string) {
 // Find a Chrome/Chromium binary for PDF printing, cross-platform.
 // Order: explicit env, playwright's chromium (setup.sh installs it),
 // puppeteer's chrome-headless-shell, then system installs.
-import { homedir, platform } from "node:os";
+import { homedir, platform, tmpdir } from "node:os";
 function findChromeCandidates(): { bin: string; headlessShell: boolean }[] {
   const out: { bin: string; headlessShell: boolean }[] = [];
   const home = homedir();
@@ -1250,6 +1315,7 @@ function route(req: Request, url: URL): Promise<Response> | Response {
   if ((mt = m("/api/files/(\\d+)")) && req.method === "GET") return downloadFile(mt[1]);
   if (path === "/api/design-systems" && req.method === "GET")  return listDesignSystems();
   if (path === "/api/design-systems" && req.method === "POST") return createDesignSystem(req);
+  if (path === "/api/design-systems/from-reference" && req.method === "POST") return createDesignSystemFromReference(req);
   if ((mt = m("/api/design-systems/(\\d+)")) && req.method === "GET")    return getDesignSystem(mt[1]);
   if ((mt = m("/api/design-systems/(\\d+)")) && req.method === "PATCH")  return updateDesignSystem(mt[1], req);
   if ((mt = m("/api/design-systems/(\\d+)")) && req.method === "DELETE") return deleteDesignSystem(mt[1]);

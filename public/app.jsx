@@ -3239,7 +3239,26 @@ function DesignSystemModal({ system, onClose, onSaved }) {
   const [fontDisplay, setFontDisplay] = useState(init?.fontDisplay || DS_FONTS[0].value);
   const [fontSans, setFontSans] = useState(init?.fontSans || DS_FONTS[0].value);
   const [busy, setBusy] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [mode, setMode] = useState("build");   // "build" | "import" (create only)
   const fam = dsAccentFamily(accent);
+  // Import a design system straight from a reference deck/template: the
+  // server parses the file's PowerPoint theme (colors + fonts) into brand
+  // tokens. Exact match for a corporate template — no guessing.
+  const importFromFile = async (file) => {
+    if (!file || importing) return;
+    setImporting(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      if (name.trim()) fd.append("name", name.trim());
+      const res = await fetch("/api/design-systems/from-reference", { method: "POST", body: fd });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error || res.statusText);
+      onSaved(d.design_system);
+    } catch (err) { alert("import failed: " + err.message); }
+    finally { setImporting(false); }
+  };
   const submit = async (e) => {
     e?.preventDefault();
     if (!name.trim() || busy) return;
@@ -3262,7 +3281,26 @@ function DesignSystemModal({ system, onClose, onSaved }) {
         <p className="note-sub">{editing
           ? "Tweak this system's name, description, colors, and fonts. Saving re-themes it from Oneshot."
           : "A branded copy of Oneshot, same structure so results stay repeatable, just your colors and fonts."}</p>
-        <div className="ds-new-grid">
+        {!editing && (
+          <div className="ds-mode">
+            <button type="button" className={"ds-mode-btn" + (mode === "build" ? " on" : "")} onClick={() => setMode("build")}>Build with the form</button>
+            <button type="button" className={"ds-mode-btn" + (mode === "import" ? " on" : "")} onClick={() => setMode("import")}>Import from a file</button>
+          </div>
+        )}
+        {!editing && mode === "import" && (
+          <div className="ds-import-pane">
+            <label>Name <span className="note-sub" style={{ display: "inline" }}>(optional)</span></label>
+            <input className="field" value={name} placeholder="Acme Brand" onChange={(e) => setName(e.target.value)} />
+            <label className={"ds-import" + (importing ? " busy" : "")}>
+              <Icon name="upload" />
+              {importing ? "Reading theme…" : "Choose a .pptx, .potx, or .thmx — pulls its exact colors + fonts"}
+              <input type="file" accept=".pptx,.potx,.thmx" style={{ display: "none" }} disabled={importing}
+                     onChange={(e) => { const f = e.target.files && e.target.files[0]; e.target.value = ""; importFromFile(f); }} />
+            </label>
+            <p className="note-sub">Reads the file's PowerPoint theme directly, so the system matches the template's palette and fonts exactly.</p>
+          </div>
+        )}
+        <div className="ds-new-grid" style={(!editing && mode === "import") ? { display: "none" } : undefined}>
           <div className="ds-new-form">
             <label>Name</label>
             <input className="field" value={name} autoFocus placeholder="Acme Brand"
@@ -3308,9 +3346,11 @@ function DesignSystemModal({ system, onClose, onSaved }) {
         </div>
         <div className="modal-foot">
           <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button type="submit" className="btn btn-primary" disabled={busy || !name.trim()}>
-            <Icon name="check" /> {busy ? "Saving…" : editing ? "Save theme" : "Create"}
-          </button>
+          {(editing || mode === "build") && (
+            <button type="submit" className="btn btn-primary" disabled={busy || !name.trim()}>
+              <Icon name="check" /> {busy ? "Saving…" : editing ? "Save theme" : "Create"}
+            </button>
+          )}
         </div>
       </form>
     </div>
