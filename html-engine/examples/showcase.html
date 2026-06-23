@@ -115,8 +115,16 @@
      heading never strands at the foot of a page. */
   @media print {
     .card, .demo, .type-row, .spec-field, .swatch, .chip, .progress,
-    .row, .grid > *, .badge, .avatar { break-inside: avoid; }
+    .row, .grid > *, .badge, .avatar, pre, .code { break-inside: avoid; }
     .section-title, .section-sub, .doc-head { break-after: avoid; }
+    /* Type specimens are authored at slide scale — huge on a printed page.
+       Cap the large tiers for the PDF so it reads as a document while
+       keeping the hierarchy intact. (On-screen keeps true slide scale.) */
+    .doc-head .name { font-size: 34px !important; }
+    .type-row .display { font-size: 40px !important; line-height: 1.1 !important; }
+    .type-row h1 { font-size: 30px !important; line-height: 1.15 !important; }
+    .type-row h2 { font-size: 24px !important; line-height: 1.2 !important; }
+    .type-row h3 { font-size: 19px !important; line-height: 1.25 !important; }
   }
 </style>
 </head>
