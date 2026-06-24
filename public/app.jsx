@@ -2892,7 +2892,7 @@ function AgentPanelBody({ ws, generation, busy, files, notes, onGenerate, onRepl
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="agent-title">
             Agent · {(() => {
-              const LB = { claude: "Claude", copilot: "Copilot", codex: "Codex" };
+              const LB = { claude: "Claude", copilot: "Copilot", codex: "Codex", cursor: "Cursor" };
               const eng = (hasActive && generation?.engine) || ws?.agent_engine || "claude";
               return LB[eng] || eng;
             })()}

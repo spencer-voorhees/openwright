@@ -4,8 +4,9 @@ import type { AgentAdapter } from "./types";
 import { claudeAdapter } from "./claude";
 import { copilotAdapter } from "./copilot";
 import { codexAdapter } from "./codex";
+import { cursorAdapter } from "./cursor";
 
-export const ADAPTERS: AgentAdapter[] = [claudeAdapter, copilotAdapter, codexAdapter];
+export const ADAPTERS: AgentAdapter[] = [claudeAdapter, copilotAdapter, codexAdapter, cursorAdapter];
 
 export const DEFAULT_ENGINE = process.env.OPENWRIGHT_AGENT || "claude";
 
