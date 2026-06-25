@@ -29,8 +29,8 @@ function shortPath(p: string): string {
 }
 
 // Pre-auth fallback only — once logged in, listModels() returns the live
-// account list. Cursor's --model accepts slugs like these.
-const FALLBACK_MODELS = ["gpt-5", "sonnet-4-thinking", "sonnet-4", "gpt-5-mini"];
+// account list. Cursor's --model accepts ids like these.
+const FALLBACK_MODELS = ["auto", "composer-2.5-fast", "claude-opus-4-8-high", "claude-4.6-sonnet-medium", "gpt-5.5-medium"];
 
 export const cursorAdapter: AgentAdapter = {
   id: "cursor",
@@ -41,11 +41,14 @@ export const cursorAdapter: AgentAdapter = {
       const proc = Bun.spawn({ cmd: [CURSOR_BIN, "--list-models"], stdout: "pipe", stderr: "pipe" });
       if ((await proc.exited) !== 0) return FALLBACK_MODELS;
       const out = (await new Response(proc.stdout).text()).trim();
-      // Output is one model id per line (possibly with a header / bullets).
-      const slugs = out.split("\n")
-        .map((l) => l.replace(/^[\s*\-•]+/, "").trim())
-        .filter((l) => /^[a-z0-9][\w.\-]*$/i.test(l) && /\d/.test(l));
-      return slugs.length ? slugs : FALLBACK_MODELS;
+      // Each line is "<model-id> - <Display Name>" (e.g. "gpt-5.3-codex -
+      // Codex 5.3"). Take the id before the " - " separator.
+      const ids = out.split("\n")
+        .map((l) => l.trim())
+        .filter(Boolean)
+        .map((l) => l.split(/\s+[-–—]\s+/)[0].trim())
+        .filter((l) => /^[a-z0-9][\w.\-]+$/i.test(l));
+      return ids.length ? ids : FALLBACK_MODELS;
     } catch {
       return FALLBACK_MODELS;
     }
