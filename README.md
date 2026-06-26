@@ -7,10 +7,10 @@ Agent-built slide decks from a workspace of files. Drop in source material
 single-file HTML deck rendered live in the app — exportable to PDF and to
 genuinely editable PPTX.
 
-Bring your own agent: **Claude** (Agent SDK), **GitHub Copilot CLI**, or
-**OpenAI Codex CLI**. Everything runs locally and drives the agent CLI you
-are already authorized to use — no new data path, files never leave your
-machine except through your chosen agent.
+Bring your own agent: **Claude** (Agent SDK), **GitHub Copilot CLI**,
+**OpenAI Codex CLI**, or **Cursor CLI**. Everything runs locally and drives
+the agent CLI you are already authorized to use — no new data path, files
+never leave your machine except through your chosen agent.
 
 ## Features
 
@@ -33,8 +33,9 @@ machine except through your chosen agent.
 - **A workspace that behaves**: live preview with expand/collapse window
   controls, version history per artifact, status everywhere it matters,
   and a dashboard ordered by what you touched last.
-- **Local-only by default**: the server binds 127.0.0.1; set
-  `OPENWRIGHT_HOST=0.0.0.0` if you want it reachable from other devices.
+- **Reachable from your other devices**: the server binds `0.0.0.0` so you
+  can open it from a phone or tablet on the same network; set
+  `OPENWRIGHT_HOST=127.0.0.1` to restrict it to this machine only.
 
 ## Quick start
 
@@ -100,6 +101,7 @@ tools and are left in place either way.
 | Claude | `ANTHROPIC_API_KEY` in `.env`, or a logged-in Claude Code install |
 | Copilot | run `copilot` once and `/login`, or `COPILOT_GITHUB_TOKEN` (fine-grained PAT with Copilot permission; classic tokens are rejected) |
 | Codex | `codex login` (ChatGPT account) or `codex login --api-key` |
+| Cursor | `cursor-agent login`, or `CURSOR_API_KEY` (install the CLI from cursor.com/install) |
 
 The workspace settings popover shows live availability per engine and a
 model dropdown listing what that engine reports as runnable right now.
@@ -132,7 +134,7 @@ remembers the result.
 ```
 src/server.ts        Bun HTTP server + API + exporter shell-outs
 src/agent.ts         engine-agnostic generation loop
-src/agents/          BYOA adapters (claude, copilot, codex)
+src/agents/          BYOA adapters (claude, copilot, codex, cursor)
 src/db.ts            sqlite schema + design-system seeding
 design-systems/      built-in CSS, seeded into the db on boot
 html-engine/         deck shell, lucide build, example deck, exporters

@@ -112,15 +112,18 @@ step "Agent engines (at least one required)"
 CLAUDE_BIN="$(find_bin claude || true)"
 COPILOT_BIN="$(find_bin copilot || true)"
 CODEX_BIN="$(find_bin codex || true)"
-HAVE_CLAUDE=0; HAVE_COPILOT=0; HAVE_CODEX=0
+CURSOR_BIN="$(find_bin cursor-agent || true)"
+HAVE_CLAUDE=0; HAVE_COPILOT=0; HAVE_CODEX=0; HAVE_CURSOR=0
 { [ -n "$CLAUDE_BIN" ] || [ -n "${ANTHROPIC_API_KEY:-}" ] || [ -f "$HOME/.claude/.credentials.json" ]; } && HAVE_CLAUDE=1
 [ -n "$COPILOT_BIN" ] && HAVE_COPILOT=1
 [ -n "$CODEX_BIN" ]   && HAVE_CODEX=1
+{ [ -n "$CURSOR_BIN" ] || [ -n "${CURSOR_API_KEY:-}" ]; } && HAVE_CURSOR=1
 
 [ "$HAVE_CLAUDE" = "1" ]  && ok "detected: claude $([ -n "$CLAUDE_BIN" ] && echo "($CLAUDE_BIN)" || echo "(API key)")"
 [ "$HAVE_COPILOT" = "1" ] && ok "detected: copilot ($COPILOT_BIN)"
 [ "$HAVE_CODEX" = "1" ]   && ok "detected: codex ($CODEX_BIN)"
-[ "$HAVE_CLAUDE$HAVE_COPILOT$HAVE_CODEX" = "000" ] && note "no compatible agent CLI found on this machine"
+[ "$HAVE_CURSOR" = "1" ]  && ok "detected: cursor $([ -n "$CURSOR_BIN" ] && echo "($CURSOR_BIN)" || echo "(API key)")"
+[ "$HAVE_CLAUDE$HAVE_COPILOT$HAVE_CODEX$HAVE_CURSOR" = "0000" ] && note "no compatible agent CLI found on this machine"
 
 COPILOT_FRESH=0
 install_engine() {
@@ -128,6 +131,11 @@ install_engine() {
     claude)  bun add -g @anthropic-ai/claude-code >/dev/null && HAVE_CLAUDE=1  && ok "claude installed — run 'claude' once to log in" ;;
     copilot) bun add -g @github/copilot >/dev/null           && HAVE_COPILOT=1 && COPILOT_FRESH=1 && ok "copilot installed" ;;
     codex)   bun add -g @openai/codex >/dev/null             && HAVE_CODEX=1   && ok "codex installed" ;;
+    # Cursor ships its own installer (not on npm); it drops cursor-agent
+    # into ~/.local/bin, which find_bin already searches.
+    cursor)  curl https://cursor.com/install -fsS | bash >/dev/null \
+               && CURSOR_BIN="$(find_bin cursor-agent || echo "$HOME/.local/bin/cursor-agent")" \
+               && HAVE_CURSOR=1 && ok "cursor installed — run 'cursor-agent login' to log in" ;;
   esac
 }
 
@@ -135,22 +143,24 @@ install_engine() {
 [ "$HAVE_CLAUDE" = "0" ]  && ask "Install Claude Code?" n          && install_engine claude  || true
 [ "$HAVE_COPILOT" = "0" ] && ask "Install GitHub Copilot CLI?" n   && install_engine copilot || true
 [ "$HAVE_CODEX" = "0" ]   && ask "Install OpenAI Codex CLI?" n     && install_engine codex   || true
+[ "$HAVE_CURSOR" = "0" ]  && ask "Install Cursor CLI?" n           && install_engine cursor  || true
 
 # Enforce the minimum: if still nothing, the wizard requires a pick.
-if [ "$HAVE_CLAUDE$HAVE_COPILOT$HAVE_CODEX" = "000" ]; then
+if [ "$HAVE_CLAUDE$HAVE_COPILOT$HAVE_CODEX$HAVE_CURSOR" = "0000" ]; then
   if [ "$YES" = "1" ] || [ ! -t 0 ]; then
     note "installing Claude Code as the default engine"
     install_engine claude
   else
     bold "  openwright needs at least one agent engine."
-    while [ "$HAVE_CLAUDE$HAVE_COPILOT$HAVE_CODEX" = "000" ]; do
-      printf '  Pick one to install — 1) Claude  2) Copilot  3) Codex : '
+    while [ "$HAVE_CLAUDE$HAVE_COPILOT$HAVE_CODEX$HAVE_CURSOR" = "0000" ]; do
+      printf '  Pick one to install — 1) Claude  2) Copilot  3) Codex  4) Cursor : '
       read -r pick || pick=1
       case "$pick" in
         1) install_engine claude ;;
         2) install_engine copilot ;;
         3) install_engine codex ;;
-        *) note "enter 1, 2, or 3" ;;
+        4) install_engine cursor ;;
+        *) note "enter 1, 2, 3, or 4" ;;
       esac
     done
   fi
@@ -161,6 +171,7 @@ fi
 DEFAULT_ENGINE="claude"
 [ "$HAVE_CLAUDE" = "0" ] && [ "$HAVE_COPILOT" = "1" ] && DEFAULT_ENGINE="copilot"
 [ "$HAVE_CLAUDE" = "0" ] && [ "$HAVE_COPILOT" = "0" ] && [ "$HAVE_CODEX" = "1" ] && DEFAULT_ENGINE="codex"
+[ "$HAVE_CLAUDE" = "0" ] && [ "$HAVE_COPILOT" = "0" ] && [ "$HAVE_CODEX" = "0" ] && [ "$HAVE_CURSOR" = "1" ] && DEFAULT_ENGINE="cursor"
 if ! grep -q '^OPENWRIGHT_AGENT=' .env 2>/dev/null; then
   printf 'OPENWRIGHT_AGENT=%s\n' "$DEFAULT_ENGINE" >> .env
   note "default engine: $DEFAULT_ENGINE (change in Settings or .env)"
@@ -184,12 +195,20 @@ if [ "$HAVE_CODEX" = "1" ] && ! "${CODEX_BIN:-codex}" login status >/dev/null 2>
     note "codex auth later: run 'codex login'"
   fi
 fi
+if [ "$HAVE_CURSOR" = "1" ] && [ -z "${CURSOR_API_KEY:-}" ] && ! "${CURSOR_BIN:-cursor-agent}" status >/dev/null 2>&1; then
+  if [ "$YES" = "0" ] && ask "Log in to Cursor now (opens browser)?" n; then
+    "${CURSOR_BIN:-cursor-agent}" login || note "login did not complete — run 'cursor-agent login' later"
+  else
+    note "cursor auth later: run 'cursor-agent login' (or set CURSOR_API_KEY)"
+  fi
+fi
 
 # ── 5. summary ───────────────────────────────────────────────────
 step "Done"
 [ "$HAVE_CLAUDE" = "1" ]  && ok "claude ready"
 [ "$HAVE_COPILOT" = "1" ] && ok "copilot installed (auth: 'copilot login')"
 [ "$HAVE_CODEX" = "1" ]   && ok "codex installed (auth: 'codex login status')"
+[ "$HAVE_CURSOR" = "1" ]  && ok "cursor installed (auth: 'cursor-agent status')"
 printf '\n'
 if ask "Start openwright now?" y; then
   "$HOME/.bun/bin/bun" "$(pwd)/bin/openwright.ts" start

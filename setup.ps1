@@ -108,14 +108,17 @@ Step "Agent engines (at least one required)"
 $claudeBin  = FindBin "claude"
 $copilotBin = FindBin "copilot"
 $codexBin   = FindBin "codex"
+$cursorBin  = FindBin "cursor-agent"
 $haveClaude  = [bool]($claudeBin -or $env:ANTHROPIC_API_KEY)
 $haveCopilot = [bool]$copilotBin
 $haveCodex   = [bool]$codexBin
+$haveCursor  = [bool]($cursorBin -or $env:CURSOR_API_KEY)
 
 if ($haveClaude)  { Ok "detected: claude $(if ($claudeBin) { "($claudeBin)" } else { "(API key)" })" }
 if ($haveCopilot) { Ok "detected: copilot ($copilotBin)" }
 if ($haveCodex)   { Ok "detected: codex ($codexBin)" }
-if (-not ($haveClaude -or $haveCopilot -or $haveCodex)) { Note "no compatible agent CLI found on this machine" }
+if ($haveCursor)  { Ok "detected: cursor $(if ($cursorBin) { "($cursorBin)" } else { "(API key)" })" }
+if (-not ($haveClaude -or $haveCopilot -or $haveCodex -or $haveCursor)) { Note "no compatible agent CLI found on this machine" }
 
 $copilotFresh = $false
 function InstallEngine($which) {
@@ -123,27 +126,36 @@ function InstallEngine($which) {
     "claude"  { bun add -g "@anthropic-ai/claude-code" | Out-Null; $script:haveClaude  = $true; Ok "claude installed - run 'claude' once to log in" }
     "copilot" { bun add -g "@github/copilot" | Out-Null;           $script:haveCopilot = $true; $script:copilotFresh = $true; Ok "copilot installed" }
     "codex"   { bun add -g "@openai/codex" | Out-Null;             $script:haveCodex   = $true; Ok "codex installed" }
+    # Cursor ships its own installer (not on npm) - native Windows build.
+    "cursor"  {
+      irm 'https://cursor.com/install?win32=true' | iex | Out-Null
+      $script:cursorBin  = FindBin "cursor-agent"
+      $script:haveCursor = $true
+      Ok "cursor installed - run 'cursor-agent login' to log in"
+    }
   }
 }
 
 if ((-not $haveClaude)  -and (Ask "Install Claude Code?" $false))        { InstallEngine "claude" }
 if ((-not $haveCopilot) -and (Ask "Install GitHub Copilot CLI?" $false)) { InstallEngine "copilot" }
 if ((-not $haveCodex)   -and (Ask "Install OpenAI Codex CLI?" $false))   { InstallEngine "codex" }
+if ((-not $haveCursor)  -and (Ask "Install Cursor CLI?" $false))         { InstallEngine "cursor" }
 
 # Enforce the minimum: openwright can't generate without an engine.
-if (-not ($haveClaude -or $haveCopilot -or $haveCodex)) {
+if (-not ($haveClaude -or $haveCopilot -or $haveCodex -or $haveCursor)) {
   if ($Yes) {
     Note "installing Claude Code as the default engine"
     InstallEngine "claude"
   } else {
     Write-Host "  openwright needs at least one agent engine." -ForegroundColor White
-    while (-not ($haveClaude -or $haveCopilot -or $haveCodex)) {
-      $pick = Read-Host "  Pick one to install - 1) Claude  2) Copilot  3) Codex"
+    while (-not ($haveClaude -or $haveCopilot -or $haveCodex -or $haveCursor)) {
+      $pick = Read-Host "  Pick one to install - 1) Claude  2) Copilot  3) Codex  4) Cursor"
       switch ($pick) {
         "1" { InstallEngine "claude" }
         "2" { InstallEngine "copilot" }
         "3" { InstallEngine "codex" }
-        default { Note "enter 1, 2, or 3" }
+        "4" { InstallEngine "cursor" }
+        default { Note "enter 1, 2, 3, or 4" }
       }
     }
   }
@@ -153,6 +165,7 @@ if (-not ($haveClaude -or $haveCopilot -or $haveCodex)) {
 $defaultEngine = "claude"
 if (-not $haveClaude -and $haveCopilot) { $defaultEngine = "copilot" }
 elseif (-not $haveClaude -and -not $haveCopilot -and $haveCodex) { $defaultEngine = "codex" }
+elseif (-not $haveClaude -and -not $haveCopilot -and -not $haveCodex -and $haveCursor) { $defaultEngine = "cursor" }
 if (-not (Select-String -Path ".env" -Pattern "^OPENWRIGHT_AGENT=" -Quiet -ErrorAction SilentlyContinue)) {
   Add-Content ".env" "OPENWRIGHT_AGENT=$defaultEngine"
   Note "default engine: $defaultEngine (change in Settings or .env)"
@@ -175,12 +188,20 @@ if ($haveCodex) {
     else { Note "codex auth later: run 'codex login'" }
   }
 }
+if ($haveCursor -and -not $env:CURSOR_API_KEY) {
+  & $(if ($cursorBin) { $cursorBin } else { "cursor-agent" }) status *> $null
+  if ($LASTEXITCODE -ne 0) {
+    if ((-not $Yes) -and (Ask "Log in to Cursor now (opens browser)?" $false)) { & $(if ($cursorBin) { $cursorBin } else { "cursor-agent" }) login }
+    else { Note "cursor auth later: run 'cursor-agent login' (or set CURSOR_API_KEY)" }
+  }
+}
 
 # -- 4. summary -----------------------------------------------------
 Step "Done"
 if ($haveClaude)  { Ok "claude ready" }
 if ($haveCopilot) { Ok "copilot installed (auth: 'copilot login')" }
 if ($haveCodex)   { Ok "codex installed (auth: 'codex login status')" }
+if ($haveCursor)  { Ok "cursor installed (auth: 'cursor-agent status')" }
 Write-Host ""
 $bunExe = Join-Path $env:USERPROFILE ".bun\bin\bun.exe"
 if (Ask "Start openwright now?" $true) {
