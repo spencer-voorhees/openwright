@@ -33,9 +33,10 @@ never leave your machine except through your chosen agent.
 - **A workspace that behaves**: live preview with expand/collapse window
   controls, version history per artifact, status everywhere it matters,
   and a dashboard ordered by what you touched last.
-- **Reachable from your other devices**: the server binds `0.0.0.0` so you
-  can open it from a phone or tablet on the same network; set
-  `OPENWRIGHT_HOST=127.0.0.1` to restrict it to this machine only.
+- **Local-only by default**: the server binds `127.0.0.1`, so it's never
+  exposed to the network out of the box (it drives shell-capable agents —
+  loopback is the safe default). Set `OPENWRIGHT_HOST=0.0.0.0` to reach it
+  from a phone or another device on your LAN.
 
 ## Quick start
 
