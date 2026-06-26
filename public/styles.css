@@ -1073,10 +1073,11 @@ textarea.field { resize: none; line-height: 1.5; }
   .crumb .cur { font-size: 16px; max-width: 100%; flex: 0 1 auto; }
   .crumb-status { margin-left: 0; flex-wrap: wrap; gap: 8px; }
   .crumb-status .hb { border: none; background: transparent; padding: 0; white-space: normal; }
-  /* Artifact selector + gear: own row, the selector taking the width. */
-  .crumb .ws-settings { flex: 0 0 100%; margin-top: 3px; flex-wrap: nowrap; gap: 8px; }
-  .crumb .ws-settings .ws-chip-artifact { flex: 1 1 auto; min-width: 0; }
-  .crumb .ws-settings .ws-chip-artifact-btn { width: 100%; justify-content: space-between; }
+  /* Artifact selector + gear: own row, but the selector sizes to its
+     content (not full-width) so it reads as a compact chip, left-aligned. */
+  .crumb .ws-settings { flex: 0 0 100%; margin-top: 3px; flex-wrap: nowrap; gap: 8px; justify-content: flex-start; }
+  .crumb .ws-settings .ws-chip-artifact { flex: 0 1 auto; min-width: 0; max-width: 100%; }
+  .crumb .ws-settings .ws-chip-artifact-btn { max-width: 100%; justify-content: flex-start; }
   .crumb .ws-settings .ws-settings-wrap { flex: 0 0 auto; }
   .files-body { padding: 16px 16px 32px; }
   .agent-head { min-height: 54px; padding: 11px 16px; }
