@@ -1474,12 +1474,14 @@ Bun.serve({
             /<link\s+rel="stylesheet"\s+href="\/api\/design-systems\/\d+\/css\.css(?:\?[^"]*)?"\s*\/?>/i,
             `<link rel="stylesheet" href="/api/design-systems/${ws.design_system_id}/css.css${variant}">`,
           );
-          // Safety net for files authored before the viewport-meta
-          // guidance: without it, mobile renders the page at ~980px and
-          // scrolls. Inject one if missing.
-          if (isNonDeck && !/name=["']viewport["']/i.test(patched)) {
+          // Safety net for files missing a viewport meta: without it,
+          // mobile renders the page at ~980px. For decks that's worse than
+          // scrolling — the deck-shell's ≤640px rules never fire, so the
+          // thumbnail rail stays visible and the slide is zoomed out when
+          // presenting. Inject one for ALL artifact types (incl. decks).
+          if (!/name=["']viewport["']/i.test(patched)) {
             patched = patched.replace(/<head([^>]*)>/i,
-              `<head$1><meta name="viewport" content="width=device-width, initial-scale=1">`);
+              `<head$1><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">`);
           }
           // Non-deck artifacts carry no deck shell, so the host's Edit
           // button has nothing to talk to. Inject the edit bridge
