@@ -1064,18 +1064,17 @@ textarea.field { resize: none; line-height: 1.5; }
   .panel-head { min-height: 54px; padding: 12px 16px; align-items: flex-start; gap: 10px; }
   /* Back arrow lines up with the workspace name on the first row. */
   .panel-head > .icon-btn { align-self: flex-start; margin-top: -2px; flex: none; }
-  /* Two tidy rows: the workspace name + its status sit together on the
-     first line; the artifact selector + gear get their own line below,
-     full width. Wrapping (not a fixed column) keeps long names from
-     clipping. */
-  .crumb { flex-flow: row wrap; align-items: center; gap: 7px 10px; }
+  /* One row: workspace name, status, artifact selector, and gear all sit
+     inline on a single line. nowrap keeps the selector + gear up on the
+     title's row; the name shrinks and ellipsizes (min-width:0) when the
+     row is tight rather than pushing the controls below it. */
+  .crumb { flex-flow: row nowrap; align-items: center; gap: 7px 10px; }
   .crumb .crumb-trail { display: none; }   /* back arrow already says "up" */
-  .crumb .cur { font-size: 16px; max-width: 100%; flex: 0 1 auto; }
-  .crumb-status { margin-left: 0; flex-wrap: wrap; gap: 8px; }
-  .crumb-status .hb { border: none; background: transparent; padding: 0; white-space: normal; }
-  /* Artifact selector + gear: own row, but the selector sizes to its
-     content (not full-width) so it reads as a compact chip, left-aligned. */
-  .crumb .ws-settings { flex: 0 0 100%; margin-top: 3px; flex-wrap: nowrap; gap: 8px; justify-content: flex-start; }
+  .crumb .cur { font-size: 16px; flex: 0 1 auto; min-width: 0; max-width: 100%; }
+  .crumb-status { margin-left: 0; flex: 0 0 auto; flex-wrap: nowrap; gap: 8px; }
+  .crumb-status .hb { border: none; background: transparent; padding: 0; white-space: nowrap; }
+  /* Artifact selector + gear: compact, sized to content, kept together. */
+  .crumb .ws-settings { flex: 0 1 auto; flex-wrap: nowrap; gap: 8px; justify-content: flex-start; }
   .crumb .ws-settings .ws-chip-artifact { flex: 0 1 auto; min-width: 0; max-width: 100%; }
   .crumb .ws-settings .ws-chip-artifact-btn { max-width: 100%; justify-content: flex-start; }
   .crumb .ws-settings .ws-settings-wrap { flex: 0 0 auto; }
