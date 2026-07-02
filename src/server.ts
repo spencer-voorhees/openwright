@@ -492,10 +492,14 @@ async function getWorkspace(slug: string) {
 
 // Unpack an uploaded .zip in place: write each contained file into the
 // workspace files dir and return their metadata. Uses Python's stdlib
-// zipfile — cross-platform, and `unzip` isn't reliably on PATH. Path
-// traversal (zip-slip) is defeated by taking basename of every member;
-// directories, dotfiles, and __MACOSX cruft are skipped. Returns [] on any
-// failure so the caller can fall back to storing the archive itself.
+// zipfile — cross-platform, and `unzip` isn't reliably on PATH.
+// Sub-folder structure is PRESERVED (the file name carries its relative
+// path), so same-named files in the root and a subfolder stay distinct
+// instead of colliding. Zip-slip is defeated by dropping every ".." and
+// absolute-path component, which keeps writes inside the files dir;
+// directories, dotfiles, and __MACOSX cruft are skipped. A true
+// same-path re-upload gets a -N suffix. Returns [] on any failure so the
+// caller can fall back to storing the archive itself.
 async function extractZipInto(zipBuf: Buffer, filesDir: string): Promise<{ name: string; path: string; size: number }[]> {
   const tmpZip = join(filesDir, `.upload-${Date.now()}-${Math.round(Math.random() * 1e6)}.zip`);
   writeFileSync(tmpZip, zipBuf);
@@ -506,18 +510,22 @@ async function extractZipInto(zipBuf: Buffer, filesDir: string): Promise<{ name:
     "except Exception as e: print(json.dumps({'error':str(e)})); sys.exit(0)",
     "out=[]",
     "for info in z.infolist():",
-    "    if info.is_dir() or '__MACOSX' in info.filename: continue",
-    "    base=os.path.basename(info.filename).replace(chr(92),'_')",
-    "    if not base or base.startswith('.'): continue",
-    "    target=os.path.join(dest,base)",
+    "    if info.is_dir(): continue",
+    "    raw=info.filename.replace(chr(92),'/')",
+    "    if '__MACOSX' in raw: continue",
+    "    parts=[p for p in raw.split('/') if p not in ('','.','..')]",  // drop traversal + absolute
+    "    if not parts or parts[-1].startswith('.'): continue",
+    "    target=os.path.join(dest,*parts)",
     "    if os.path.exists(target):",
-    "        root,ext=os.path.splitext(base); i=1",
-    "        while os.path.exists(os.path.join(dest,root+'-'+str(i)+ext)): i+=1",
-    "        target=os.path.join(dest,root+'-'+str(i)+ext)",
+    "        d=os.path.dirname(target); root,ext=os.path.splitext(os.path.basename(target)); i=1",
+    "        while os.path.exists(os.path.join(d,root+'-'+str(i)+ext)): i+=1",
+    "        target=os.path.join(d,root+'-'+str(i)+ext)",
+    "    rel=os.path.relpath(target,dest).replace(os.sep,'/')",
+    "    os.makedirs(os.path.dirname(target),exist_ok=True)",
     "    try:",
     "        with z.open(info) as s, open(target,'wb') as d: d.write(s.read())",
     "    except Exception: continue",
-    "    out.append({'name':os.path.basename(target),'path':target,'size':os.path.getsize(target)})",
+    "    out.append({'name':rel,'path':target,'size':os.path.getsize(target)})",
     "print(json.dumps(out))",
   ].join("\n");
   try {
