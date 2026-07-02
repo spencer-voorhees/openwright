@@ -14,7 +14,7 @@
 //   GET    /api/artifacts/:gen_id                 (latest artifact)
 //   GET    /api/files/:id                         (download a workspace file)
 import { mkdirSync, writeFileSync, statSync, unlinkSync, existsSync, readFileSync } from "node:fs";
-import { join, extname } from "node:path";
+import { join, extname, basename } from "node:path";
 import { db, getSetting, setSetting } from "./db";
 import { startGeneration, postUserReply, reapStrandedGenerations, stopGeneration, WORKSPACE_ROOT } from "./agent";
 import { ADAPTERS, DEFAULT_ENGINE } from "./agents/index";
@@ -490,6 +490,47 @@ async function getWorkspace(slug: string) {
   return json({ workspace: w, files, artifacts, generations });
 }
 
+// Unpack an uploaded .zip in place: write each contained file into the
+// workspace files dir and return their metadata. Uses Python's stdlib
+// zipfile — cross-platform, and `unzip` isn't reliably on PATH. Path
+// traversal (zip-slip) is defeated by taking basename of every member;
+// directories, dotfiles, and __MACOSX cruft are skipped. Returns [] on any
+// failure so the caller can fall back to storing the archive itself.
+async function extractZipInto(zipBuf: Buffer, filesDir: string): Promise<{ name: string; path: string; size: number }[]> {
+  const tmpZip = join(filesDir, `.upload-${Date.now()}-${Math.round(Math.random() * 1e6)}.zip`);
+  writeFileSync(tmpZip, zipBuf);
+  const PY = [
+    "import sys,zipfile,os,json",
+    "src,dest=sys.argv[1],sys.argv[2]",
+    "try: z=zipfile.ZipFile(src)",
+    "except Exception as e: print(json.dumps({'error':str(e)})); sys.exit(0)",
+    "out=[]",
+    "for info in z.infolist():",
+    "    if info.is_dir() or '__MACOSX' in info.filename: continue",
+    "    base=os.path.basename(info.filename).replace(chr(92),'_')",
+    "    if not base or base.startswith('.'): continue",
+    "    target=os.path.join(dest,base)",
+    "    if os.path.exists(target):",
+    "        root,ext=os.path.splitext(base); i=1",
+    "        while os.path.exists(os.path.join(dest,root+'-'+str(i)+ext)): i+=1",
+    "        target=os.path.join(dest,root+'-'+str(i)+ext)",
+    "    try:",
+    "        with z.open(info) as s, open(target,'wb') as d: d.write(s.read())",
+    "    except Exception: continue",
+    "    out.append({'name':os.path.basename(target),'path':target,'size':os.path.getsize(target)})",
+    "print(json.dumps(out))",
+  ].join("\n");
+  try {
+    const p = Bun.spawn({ cmd: [PYTHON_BIN, "-c", PY, tmpZip, filesDir], stdout: "pipe", stderr: "ignore" });
+    const outText = await new Response(p.stdout).text();
+    await p.exited;
+    const parsed = JSON.parse(outText.trim() || "[]");
+    if (Array.isArray(parsed)) return parsed;
+  } catch { /* fall through to caller's fallback */ }
+  finally { try { unlinkSync(tmpZip); } catch { /* ignore */ } }
+  return [];
+}
+
 async function uploadFiles(slug: string, req: Request) {
   const w = workspaceBySlug(slug);
   if (!w) return err("workspace not found", 404);
@@ -497,24 +538,35 @@ async function uploadFiles(slug: string, req: Request) {
   const dir = workspaceDir(slug);
   const filesDir = join(dir, "files");
   const saved: any[] = [];
+  const record = (name: string, target: string, mimetype: string | null, size: number) => {
+    const result = db.run(
+      `INSERT INTO files(workspace_id, name, mimetype, size, path, uploaded_at)
+       VALUES(?, ?, ?, ?, ?, ?)`,
+      [w.id, name, mimetype, size, target, Date.now()]) as any;
+    saved.push(db.query("SELECT * FROM files WHERE id = ?").get(result.lastInsertRowid));
+  };
   for (const [, value] of form.entries()) {
     if (!(value instanceof File)) continue;
+    const buf = Buffer.from(await value.arrayBuffer());
+    // A .zip is unpacked and its files added individually; the archive
+    // itself is not kept. Empty/corrupt archives fall through and get
+    // stored as-is so an upload is never silently dropped.
+    const isZip = /\.zip$/i.test(value.name) || /zip/i.test(value.type || "");
+    if (isZip) {
+      const added = await extractZipInto(buf, filesDir);
+      if (added.length) { for (const f of added) record(f.name, f.path, null, f.size); continue; }
+    }
     const safeName = value.name.replace(/[\\/]/g, "_");
-    // Avoid clobbering — prefix duplicates with a timestamp.
+    // Avoid clobbering — suffix duplicates with a counter.
     let target = join(filesDir, safeName);
     if (existsSync(target)) {
       const ext = extname(safeName);
       const base = safeName.slice(0, safeName.length - ext.length);
-      target = join(filesDir, `${base}-${Date.now()}${ext}`);
+      let i = 1;
+      do { target = join(filesDir, `${base}-${i}${ext}`); i++; } while (existsSync(target));
     }
-    const buf = Buffer.from(await value.arrayBuffer());
     writeFileSync(target, buf);
-    const now = Date.now();
-    const result = db.run(
-      `INSERT INTO files(workspace_id, name, mimetype, size, path, uploaded_at)
-       VALUES(?, ?, ?, ?, ?, ?)`,
-      [w.id, safeName, value.type || null, value.size, target, now]) as any;
-    saved.push(db.query("SELECT * FROM files WHERE id = ?").get(result.lastInsertRowid));
+    record(basename(target), target, value.type || null, value.size);
   }
   return json({ files: saved }, 201);
 }
