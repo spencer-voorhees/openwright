@@ -1172,7 +1172,10 @@ function InlineAgentSelect({ ws, onChange, runActive }) {
         <div className="ws-settings-control" style={{ flexDirection: "column", alignItems: "stretch", gap: 4 }}>
           <select className="ws-settings-select" value={cur}
                   onChange={async (e) => {
-                    await patchJson(`/api/workspaces/${ws.slug}`, { agent_engine: e.target.value });
+                    // Switching engine clears the old model — it belongs to the
+                    // previous engine and won't exist in the new one's list, so
+                    // the model row resets to the new engine's default.
+                    await patchJson(`/api/workspaces/${ws.slug}`, { agent_engine: e.target.value, agent_model: "" });
                     onChange();
                   }}>
             {agents.length === 0 && <option value={cur}>{cur}</option>}

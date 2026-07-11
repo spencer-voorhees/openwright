@@ -21,6 +21,7 @@ import { homedir } from "node:os";
 import { writeFileSync } from "node:fs";
 import type { AgentAdapter, AgentRunOpts, AgentResult } from "./types";
 import { resolveBin } from "./resolve-bin";
+import { killProcessTree } from "./kill-tree";
 
 const CURSOR_BIN = resolveBin("cursor-agent", process.env.OPENWRIGHT_CURSOR_BIN);
 
@@ -96,7 +97,9 @@ export const cursorAdapter: AgentAdapter = {
       env: { ...process.env },
     });
 
-    const onParentAbort = () => { try { proc.kill(); } catch { /* noop */ } };
+    // cursor-agent spawns worker processes that outlive a plain kill, so a
+    // stop leaves the run going. Kill the whole tree.
+    const onParentAbort = () => { try { killProcessTree(proc.pid); } catch { /* noop */ } };
     opts.abortSignal.addEventListener("abort", onParentAbort, { once: true });
 
     let lastText = "";

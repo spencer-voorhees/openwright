@@ -1425,6 +1425,11 @@ function route(req: Request, url: URL): Promise<Response> | Response {
 
 Bun.serve({
   port: PORT,
+  // A cold headless-Chromium launch on the first PDF/PPTX export can run
+  // well past Bun's 10s default request timeout, which 500s the request
+  // (the retry then hits a warm Chromium and succeeds). Give exports room.
+  // 255 is Bun.serve's maximum.
+  idleTimeout: 255,
   // Loopback by default — the app drives shell-capable agent CLIs, so it
   // must not be reachable from the network unless the operator opts in.
   // Set OPENWRIGHT_HOST=0.0.0.0 to reach it from a phone/another device on
